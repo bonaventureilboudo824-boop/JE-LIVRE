@@ -1,0 +1,1568 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Je Livre — Administration</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/feather-icons/4.29.0/feather.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-app-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-database-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-auth-compat.min.js"></script>
+<style>
+  :root{
+    --yellow:#FFC629; --yellow-deep:#E6AF00; --black:#0D0D0C; --white:#fff;
+    --bg:#F3F2EF; --card:#fff; --border:#E7E5DF; --text:#0D0D0C; --text-soft:#6E6C66;
+    --green:#22C55E; --red:#DC3545; --blue:#1A73E8;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{ font-family:'Inter',sans-serif; background:var(--bg); color:var(--text); display:flex; min-height:100vh; }
+  h1,h2,h3{ font-family:'Barlow Condensed',sans-serif; font-weight:800; }
+
+  /* ---- Sidebar ---- */
+  .sidebar{ width:236px; flex:0 0 auto; background:var(--black); color:#fff; display:flex; flex-direction:column; height:100vh; position:sticky; top:0; }
+  .sidebar-brand{ display:flex; align-items:center; gap:10px; padding:20px 18px; border-bottom:1px solid #232320; }
+  .sidebar-brand .badge{ width:34px; height:34px; border-radius:50%; background:var(--yellow); color:var(--black); display:flex; align-items:center; justify-content:center; font-family:'Barlow Condensed',sans-serif; font-weight:900; font-size:14px; }
+  .sidebar-brand span{ font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:17px; }
+  .nav-list{ list-style:none; padding:14px 10px; flex:1; overflow-y:auto; }
+  .nav-item{
+    display:flex; align-items:center; gap:11px; padding:11px 12px; border-radius:10px; cursor:pointer;
+    color:#B9B7B0; font-size:13.5px; font-weight:600; margin-bottom:2px; position:relative;
+  }
+  .nav-item svg{ width:17px; height:17px; }
+  .nav-item:hover{ background:#1B1B18; color:#fff; }
+  .nav-item.active{ background:var(--yellow); color:var(--black); font-weight:800; }
+  .nav-item .badge-count{ margin-left:auto; background:var(--red); color:#fff; font-size:10px; font-weight:800; padding:2px 6px; border-radius:999px; }
+  .nav-item.active .badge-count{ background:var(--black); color:var(--yellow); }
+  .sidebar-foot{ padding:14px 18px; border-top:1px solid #232320; font-size:11px; color:#8A8880; }
+
+  /* ---- Layout principal ---- */
+  .main{ flex:1; min-width:0; display:flex; flex-direction:column; }
+  .topbar{ height:64px; background:var(--card); border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between; padding:0 26px; position:sticky; top:0; z-index:10; }
+  .topbar h1{ font-size:21px; }
+  .topbar .right{ display:flex; align-items:center; gap:14px; }
+  .conn-dot{ width:8px; height:8px; border-radius:50%; background:var(--green); }
+  .conn-status{ font-size:12px; color:var(--text-soft); display:flex; align-items:center; gap:6px; }
+  .admin-avatar{ width:34px; height:34px; border-radius:50%; background:var(--black); color:var(--yellow); display:flex; align-items:center; justify-content:center; font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:12px; }
+  .content{ padding:26px; flex:1; }
+  .page{ display:none; }
+  .page.active{ display:block; }
+
+  /* ---- Cartes KPI ---- */
+  .kpi-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:24px; }
+  .kpi-card{ background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; }
+  .kpi-card .top{ display:flex; align-items:center; justify-content:space-between; }
+  .kpi-card .ic{ width:34px; height:34px; border-radius:10px; display:flex; align-items:center; justify-content:center; background:#FFF3D2; }
+  .kpi-card .ic svg{ width:16px; height:16px; color:var(--yellow-deep); }
+  .kpi-card b{ display:block; font-family:'Barlow Condensed',sans-serif; font-size:30px; margin-top:12px; }
+  .kpi-card span{ font-size:12px; color:var(--text-soft); }
+
+  /* ---- Panneaux / cartes génériques ---- */
+  .panel{ background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px; margin-bottom:20px; }
+  .panel-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+  .panel-head h2{ font-size:18px; }
+  .panel-head .sub{ font-size:12px; color:var(--text-soft); font-weight:400; font-family:'Inter',sans-serif; }
+
+  #mapOverview, #liveMap{ height:360px; border-radius:12px; overflow:hidden; border:1px solid var(--border); }
+
+  /* ---- Tables ---- */
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  th{ text-align:left; padding:10px 12px; color:var(--text-soft); font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.03em; border-bottom:1px solid var(--border); }
+  td{ padding:12px; border-bottom:1px solid var(--border); vertical-align:middle; }
+  tr:last-child td{ border-bottom:none; }
+  .empty-row td{ text-align:center; color:var(--text-soft); padding:26px; }
+  .pill{ display:inline-block; padding:4px 10px; border-radius:999px; font-size:11px; font-weight:700; }
+  .pill.online{ background:#E3F3E4; color:#2E7D32; }
+  .pill.offline{ background:#F1F0EC; color:#6E6C66; }
+  .pill.pending{ background:#FFF3D2; color:#8A6A00; }
+  .pill.approved{ background:#E3F3E4; color:#2E7D32; }
+  .pill.rejected{ background:#FBEAEA; color:#B3261E; }
+  .pill.assigned{ background:#E7F0FE; color:#1A56C4; }
+  .pill.done{ background:#E3F3E4; color:#2E7D32; }
+
+  /* ---- Onglets internes ---- */
+  .tab-row{ display:flex; gap:8px; margin-bottom:16px; }
+  .tab-btn{ padding:8px 15px; border-radius:999px; border:1px solid var(--border); background:var(--card); font-size:12.5px; font-weight:700; cursor:pointer; color:var(--text-soft); }
+  .tab-btn.on{ background:var(--black); color:var(--yellow); border-color:var(--black); }
+
+  /* ---- Boutons ---- */
+  .btn{ border:none; border-radius:9px; padding:8px 14px; font-size:12.5px; font-weight:700; cursor:pointer; font-family:'Inter',sans-serif; }
+  .btn-yellow{ background:var(--yellow); color:var(--black); }
+  .btn-outline{ background:var(--card); color:var(--text); border:1px solid var(--border); }
+  .btn-red{ background:#FBEAEA; color:#B3261E; }
+  .btn-black{ background:var(--black); color:#fff; }
+  .btn-sm{ padding:6px 11px; font-size:11.5px; }
+
+  /* ---- Formulaires ---- */
+  .form-grid{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .form-field{ display:flex; flex-direction:column; gap:5px; }
+  .form-field.full{ grid-column:1/3; }
+  .form-field label{ font-size:11.5px; font-weight:700; color:var(--text-soft); }
+  .form-field input, .form-field textarea, .form-field select{
+    border:1px solid var(--border); border-radius:8px; padding:9px 11px; font-size:13px; font-family:'Inter',sans-serif; background:var(--bg);
+  }
+  .form-field textarea{ resize:vertical; min-height:60px; }
+
+  /* ---- Cartes support ---- */
+  .ticket-card{ border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:10px; }
+  .ticket-card .top{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .ticket-card .top b{ font-size:13.5px; }
+  .ticket-card .meta{ font-size:11.5px; color:var(--text-soft); margin-top:2px; }
+  .ticket-card .msg{ font-size:13px; margin-top:10px; background:var(--bg); border-radius:8px; padding:10px 12px; }
+  .ticket-card .reply-row{ display:flex; gap:8px; margin-top:10px; }
+  .ticket-card textarea{ flex:1; border:1px solid var(--border); border-radius:8px; padding:8px 10px; font-size:12.5px; font-family:'Inter',sans-serif; resize:vertical; min-height:38px; }
+
+  /* ---- Publicités ---- */
+  .ads-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px; }
+  .ad-item{ border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+  .ad-item .prev{ height:100px; background:linear-gradient(135deg,var(--black),#2b2b28,var(--yellow)); display:flex; align-items:flex-end; padding:10px; background-size:cover; background-position:center; }
+  .ad-item .prev b{ color:var(--yellow); font-size:15px; text-shadow:0 1px 3px rgba(0,0,0,.6); }
+  .ad-item .body{ padding:11px 13px; }
+  .ad-item .body p{ font-size:11.5px; color:var(--text-soft); margin-bottom:6px; line-height:1.4; }
+  .ad-item .row{ display:flex; align-items:center; justify-content:space-between; margin-top:8px; }
+  .ad-toggle{ width:34px; height:19px; border-radius:999px; background:var(--green); position:relative; cursor:pointer; flex:0 0 auto; }
+  .ad-toggle.off{ background:var(--border); }
+  .ad-toggle::after{ content:""; position:absolute; width:14px; height:14px; border-radius:50%; background:#fff; top:2.5px; right:3px; transition:.15s; }
+  .ad-toggle.off::after{ right:auto; left:3px; }
+
+  .empty-state{ text-align:center; padding:36px 10px; color:var(--text-soft); font-size:13px; }
+  .empty-state svg{ width:28px; height:28px; margin-bottom:10px; }
+
+  /* ---- Connexion ---- */
+  .login-overlay{ position:fixed; inset:0; z-index:9999; background:var(--black); display:flex; align-items:center; justify-content:center; }
+  .login-card{ width:100%; max-width:360px; background:#fff; border-radius:18px; padding:32px 28px; }
+  .login-card .badge{ width:48px; height:48px; border-radius:50%; background:var(--black); color:var(--yellow); display:flex; align-items:center; justify-content:center; font-family:'Barlow Condensed',sans-serif; font-weight:900; font-size:18px; margin:0 auto 16px; }
+  .login-card h2{ text-align:center; font-size:22px; }
+  .login-card p{ text-align:center; font-size:12.5px; color:var(--text-soft); margin-top:6px; margin-bottom:20px; }
+  .login-card input{ width:100%; border:1px solid var(--border); border-radius:9px; padding:11px 13px; font-size:13.5px; margin-bottom:10px; font-family:'Inter',sans-serif; }
+  .login-card button{ width:100%; background:var(--yellow); color:var(--black); border:none; border-radius:9px; padding:12px; font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:14.5px; cursor:pointer; margin-top:6px; }
+  .login-error{ color:#B3261E; font-size:12px; text-align:center; margin-top:8px; display:none; }
+  .login-hint{ margin-top:16px; background:var(--bg); border-radius:9px; padding:10px 12px; font-size:11px; color:var(--text-soft); line-height:1.5; }
+
+  /* ---- Modale de détail ---- */
+  .modal-overlay{ display:none; position:fixed; inset:0; background:rgba(13,13,12,.55); z-index:500; align-items:center; justify-content:center; padding:20px; }
+  .modal-overlay.show{ display:flex; }
+  .modal-card{ background:#fff; border-radius:16px; width:100%; max-width:480px; max-height:85vh; overflow-y:auto; padding:0; }
+  .modal-head{ display:flex; align-items:center; justify-content:space-between; padding:18px 20px; border-bottom:1px solid var(--border); position:sticky; top:0; background:#fff; }
+  .modal-head h2{ font-size:18px; }
+  .modal-close{ width:30px; height:30px; border-radius:50%; border:none; background:var(--bg); cursor:pointer; font-size:15px; }
+  .modal-body{ padding:20px; }
+  .detail-section{ margin-bottom:18px; }
+  .detail-section h3{ font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:13px; text-transform:uppercase; letter-spacing:.03em; color:var(--text-soft); margin-bottom:8px; }
+  .detail-row{ display:flex; justify-content:space-between; padding:7px 0; border-bottom:1px solid var(--border); font-size:13px; }
+  .detail-row:last-child{ border-bottom:none; }
+  .detail-row span:first-child{ color:var(--text-soft); }
+  .detail-row span:last-child{ font-weight:600; text-align:right; max-width:60%; }
+
+  /* ---- Rôles ---- */
+  .role-badge{ display:inline-block; padding:3px 9px; border-radius:999px; font-size:10.5px; font-weight:800; text-transform:uppercase; letter-spacing:.02em; }
+  .role-badge.super_admin{ background:var(--black); color:var(--yellow); }
+  .role-badge.support{ background:#E7F0FE; color:#1A56C4; }
+  .role-badge.ads{ background:#FFF3D2; color:#8A6A00; }
+  .role-badge.registrations{ background:#F3E8FD; color:#7B2FCB; }
+  .role-badge.ops{ background:#E3F3E4; color:#2E7D32; }
+  .role-checks{ display:flex; flex-wrap:wrap; gap:8px; }
+  .role-check{ display:flex; align-items:center; gap:6px; border:1px solid var(--border); border-radius:999px; padding:7px 13px; font-size:12.5px; font-weight:600; cursor:pointer; background:var(--bg); }
+  .role-check input{ accent-color:var(--yellow-deep); }
+  .chat-thread{ display:flex; flex-direction:column; gap:8px; max-height:320px; overflow-y:auto; padding:4px 2px; }
+  .chat-bubble-admin{ max-width:78%; padding:9px 13px; border-radius:14px; font-size:13px; line-height:1.4; }
+  .chat-bubble-admin.them{ align-self:flex-start; background:var(--bg); color:var(--text); border-bottom-left-radius:4px; }
+  .chat-bubble-admin.me{ align-self:flex-end; background:var(--black); color:#fff; border-bottom-right-radius:4px; }
+</style>
+</head>
+<body>
+
+<nav class="sidebar">
+  <div class="sidebar-brand"><div class="badge">JL</div><span>Je Livre Admin</span></div>
+  <ul class="nav-list">
+    <li class="nav-item active" data-page="overview" onclick="switchAdminPage('overview')"><i data-feather="grid"></i>Tableau de bord</li>
+    <li class="nav-item" data-page="live" onclick="switchAdminPage('live')"><i data-feather="radio"></i>Connectés en direct<span class="badge-count" id="navLiveCount">0</span></li>
+    <li class="nav-item" data-page="registrations" onclick="switchAdminPage('registrations')"><i data-feather="user-plus"></i>Inscriptions<span class="badge-count" id="navRegCount">0</span></li>
+    <li class="nav-item" data-page="deliveries" onclick="switchAdminPage('deliveries')"><i data-feather="package"></i>Livraisons en cours</li>
+    <li class="nav-item" data-page="support" onclick="switchAdminPage('support')"><i data-feather="headphones"></i>Service client<span class="badge-count" id="navSupportCount">0</span></li>
+    <li class="nav-item" data-page="ads" onclick="switchAdminPage('ads')"><i data-feather="image"></i>Publicités</li>
+    <li class="nav-item" data-page="withdrawals" onclick="switchAdminPage('withdrawals')"><i data-feather="arrow-up-right"></i>Retraits<span class="badge-count" id="navWithdrawalsCount">0</span></li>
+    <li class="nav-item" data-page="commissions" onclick="switchAdminPage('commissions')"><i data-feather="percent"></i>Commissions<span class="badge-count" id="navCommissionsCount">0</span></li>
+    <li class="nav-item" data-page="remittances" onclick="switchAdminPage('remittances')"><i data-feather="repeat"></i>Reversements<span class="badge-count" id="navRemittancesCount">0</span></li>
+    <li class="nav-item" data-page="payments" onclick="switchAdminPage('payments')"><i data-feather="credit-card"></i>Paiements<span class="badge-count" id="navPaymentsCount">0</span></li>
+    <li class="nav-item" data-page="managers" id="navManagersItem" onclick="switchAdminPage('managers')" style="display:none"><i data-feather="shield"></i>Gestionnaires</li>
+  </ul>
+  <div class="sidebar-foot">
+    <div id="sidebarUserInfo">Connecté au projet<br><b style="color:#fff">je-livre-509fd</b></div>
+    <div id="sidebarLogout" style="display:none;margin-top:10px;cursor:pointer;color:var(--yellow);font-weight:700" onclick="adminLogout()">Se déconnecter</div>
+  </div>
+</nav>
+
+<div class="main">
+  <div class="topbar">
+    <h1 id="pageTitle">Tableau de bord</h1>
+    <div class="right">
+      <div class="conn-status"><span class="conn-dot" id="connDot"></span><span id="connLabel">Connexion…</span></div>
+      <div class="admin-avatar">AD</div>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- TABLEAU DE BORD -->
+    <div class="page active" id="page-overview">
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="radio"></i></div></div><b id="kpiOnline">—</b><span>Livreurs en ligne</span></div>
+        <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="package"></i></div></div><b id="kpiDeliveries">—</b><span>Livraisons en cours</span></div>
+        <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="shopping-bag"></i></div></div><b id="kpiOrders">—</b><span>Commandes marketplace en cours</span></div>
+        <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="user-plus"></i></div></div><b id="kpiPending">—</b><span>Inscriptions en attente</span></div>
+        <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="headphones"></i></div></div><b id="kpiTickets">—</b><span>Tickets support ouverts</span></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Commissions de la plateforme</h2><span class="sub">Parrainages déjà déduits</span></div>
+        <div class="kpi-grid">
+          <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="percent"></i></div></div><b id="kpiCommissionSimple">—</b><span>Commission 10% (simple/marketplace)</span></div>
+          <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="truck"></i></div></div><b id="kpiCommissionFlat">—</b><span>Commission fixe (Express/Groupée)</span></div>
+          <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="gift"></i></div></div><b id="kpiReferralPayouts">—</b><span>Reversé aux parrains</span></div>
+          <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="trending-up"></i></div></div><b id="kpiCommissionNet">—</b><span>Commission nette</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Livreurs en ligne <span class="sub">carte en direct</span></h2></div>
+        <div id="mapOverview"></div>
+      </div>
+    </div>
+
+    <!-- CONNECTÉS EN DIRECT -->
+    <div class="page" id="page-live">
+      <div class="panel">
+        <div class="panel-head"><h2>Position en direct</h2></div>
+        <div id="liveMap"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Livreurs</h2><span class="sub" id="liveCountLabel">—</span></div>
+        <table>
+          <thead><tr><th>Nom</th><th>ID</th><th>Véhicule</th><th>Statut</th><th>Dernière position</th></tr></thead>
+          <tbody id="liveTableBody"><tr class="empty-row"><td colspan="5">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- INSCRIPTIONS -->
+    <div class="page" id="page-registrations">
+      <div class="tab-row" id="regTabRow">
+        <button class="tab-btn on" onclick="setRegFilter(this,'all')">Toutes</button>
+        <button class="tab-btn" onclick="setRegFilter(this,'livreur')">Livreurs</button>
+        <button class="tab-btn" onclick="setRegFilter(this,'entreprise')">Entreprises</button>
+        <button class="tab-btn" onclick="setRegFilter(this,'boutique')">Boutiques</button>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Demandes d'inscription</h2></div>
+        <div id="registrationsList"><div class="empty-state">Chargement…</div></div>
+      </div>
+    </div>
+
+    <!-- LIVRAISONS EN COURS -->
+    <div class="page" id="page-deliveries">
+      <div class="panel">
+        <div class="panel-head"><h2>Demandes de livraison</h2></div>
+        <table>
+          <thead><tr><th>Suivi</th><th>Statut</th><th>Distance</th><th>Prix</th><th>Créée</th></tr></thead>
+          <tbody id="deliveriesTableBody"><tr class="empty-row"><td colspan="5">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Commandes marketplace</h2></div>
+        <table>
+          <thead><tr><th>Commande</th><th>Boutique</th><th>Statut</th><th>Total</th></tr></thead>
+          <tbody id="ordersTableBody"><tr class="empty-row"><td colspan="4">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- SERVICE CLIENT -->
+    <div class="page" id="page-support">
+      <div class="panel">
+        <div class="panel-head"><h2>Envoyer une notification</h2><span class="sub">individuelle ou groupée</span></div>
+        <div class="form-grid">
+          <div class="form-field full"><label>Titre</label><input id="notifTitle" placeholder="Maintenance prévue ce soir"></div>
+          <div class="form-field full"><label>Message</label><textarea id="notifMessage" placeholder="Décrivez la notification…"></textarea></div>
+          <div class="form-field"><label>Cible</label>
+            <select id="notifTarget" onchange="toggleNotifDriverSelect()">
+              <option value="all">Tous les utilisateurs</option>
+              <option value="all_drivers">Tous les livreurs</option>
+              <option value="driver">Un livreur en particulier</option>
+              <option value="all_vendors">Tous les vendeurs</option>
+              <option value="vendor">Un vendeur en particulier</option>
+            </select>
+          </div>
+          <div class="form-field" id="notifDriverSelectWrap" style="display:none">
+            <label>Livreur</label>
+            <select id="notifDriverSelect"></select>
+          </div>
+          <div class="form-field" id="notifVendorSelectWrap" style="display:none">
+            <label>Boutique</label>
+            <select id="notifVendorSelect"></select>
+          </div>
+        </div>
+        <button class="btn btn-yellow" style="margin-top:14px" onclick="sendNotification()">Envoyer</button>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Notifications envoyées</h2></div>
+        <div id="notifHistoryList"><div class="empty-state">Chargement…</div></div>
+      </div>
+
+      <div class="tab-row">
+        <button class="tab-btn on" onclick="setSupportFilter(this,'open')">Ouverts</button>
+        <button class="tab-btn" onclick="setSupportFilter(this,'resolved')">Résolus</button>
+        <button class="tab-btn" onclick="setSupportFilter(this,'all')">Tous</button>
+      </div>
+      <div id="supportList"><div class="empty-state">Chargement…</div></div>
+    </div>
+
+    <!-- PUBLICITÉS -->
+    <div class="page" id="page-ads">
+      <div class="panel">
+        <div class="panel-head"><h2>Nouvelle publicité</h2></div>
+        <div class="form-grid">
+          <div class="form-field"><label>Titre</label><input id="adFormTitle" placeholder="Vendez sur Je Livre"></div>
+          <div class="form-field"><label>Lien de destination</label><input id="adFormLink" placeholder="https://…"></div>
+          <div class="form-field full"><label>Texte</label><textarea id="adFormText" placeholder="Ouvrez votre boutique en quelques minutes."></textarea></div>
+          <div class="form-field"><label>Image (URL)</label><input id="adFormImageUrl" placeholder="https://…/image.jpg"></div>
+          <div class="form-field"><label>Ou importer un fichier</label><input id="adFormImageFile" type="file" accept="image/*"></div>
+          <div class="form-field"><label>Position (espace)</label>
+            <select id="adFormPosition">
+              <option value="home">Espace 1 — Bannière accueil</option>
+              <option value="marketplace">Espace 2 — Bandeaux marketplace</option>
+            </select>
+          </div>
+          <div class="form-field"><label>Créneau (12 × 2h, couvre les 24h)</label>
+            <select id="adFormSlot"></select>
+          </div>
+          <div class="form-field full"><label>Jours de diffusion</label>
+            <div id="adFormDays" style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px"></div>
+          </div>
+        </div>
+        <button class="btn btn-yellow" style="margin-top:14px" onclick="createAd()">Publier la campagne</button>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Programmation des 24 créneaux</h2><span class="sub">2 espaces × 12 créneaux de 2h — activer / désactiver, modifier, supprimer</span></div>
+        <div class="ads-grid" id="adsGrid"><div class="empty-state">Chargement…</div></div>
+      </div>
+    </div>
+
+    <!-- RETRAITS -->
+    <div class="page" id="page-withdrawals">
+      <div class="panel">
+        <div class="panel-head"><h2>Demandes de retrait</h2><span class="sub">Virements Mobile Money à effectuer manuellement, puis à marquer comme versés ici</span></div>
+        <table class="data-table">
+          <thead><tr><th>Boutique</th><th>Montant</th><th>Numéro</th><th>Statut</th><th>Reçue</th><th></th></tr></thead>
+          <tbody id="withdrawalsTableBody"><tr class="empty-row"><td colspan="6">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- COMMISSIONS LIVREURS (Express/Groupée) -->
+    <div class="page" id="page-commissions">
+      <div class="panel">
+        <div class="panel-head"><h2>Commissions déclarées</h2><span class="sub">100 F par colis en Express/Groupée — vérifiez la réception Mobile Money, puis confirmez pour débloquer le livreur</span></div>
+        <table class="data-table">
+          <thead><tr><th>Livreur</th><th>Montant</th><th>Statut</th><th>Déclarée</th><th></th></tr></thead>
+          <tbody id="commissionsTableBody"><tr class="empty-row"><td colspan="5">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- REVERSEMENTS (encaissé par le livreur pour le compte d'une boutique) -->
+    <div class="page" id="page-remittances">
+      <div class="panel">
+        <div class="panel-head"><h2>Reversements en attente</h2><span class="sub">Argent encaissé par un livreur à la remise, pour le compte du vendeur — à vérifier puis confirmer</span></div>
+        <table class="data-table">
+          <thead><tr><th>Livreur</th><th>Boutique</th><th>Commande</th><th>Montant</th><th>Statut</th><th></th></tr></thead>
+          <tbody id="remittancesTableBody"><tr class="empty-row"><td colspan="6">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- PAIEMENTS EN LIGNE (confirmés par le serveur, jamais par le téléphone du client) -->
+    <div class="page" id="page-payments">
+      <div class="panel">
+        <div class="panel-head"><h2>Paiements en ligne</h2><span class="sub">Confirmés automatiquement par le prestataire de paiement. Les lignes « À vérifier » demandent votre attention : remboursement à faire ou écart de montant.</span></div>
+        <table class="data-table">
+          <thead><tr><th>Transaction</th><th>Commandes</th><th>Montant</th><th>Statut</th><th>Créé</th><th></th></tr></thead>
+          <tbody id="paymentsTableBody"><tr class="empty-row"><td colspan="6">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- GESTIONNAIRES (super admin uniquement) -->
+    <div class="page" id="page-managers">
+      <div class="panel">
+        <div class="panel-head"><h2>Nouveau gestionnaire</h2></div>
+        <div class="form-grid">
+          <div class="form-field"><label>Nom complet</label><input id="mgrFormName" placeholder="Awa Traoré"></div>
+          <div class="form-field"><label>Email</label><input id="mgrFormEmail" type="email" placeholder="awa.traore@jelivre.com"></div>
+          <div class="form-field"><label>Mot de passe</label><input id="mgrFormPassword" type="text" placeholder="Mot de passe temporaire (6 car. min.)"></div>
+          <div class="form-field full"><label>Rôles (1 à 3)</label>
+            <div class="role-checks" id="mgrRoleChecks">
+              <label class="role-check"><input type="checkbox" value="support" onchange="limitRoleChecks(this)"> Service client</label>
+              <label class="role-check"><input type="checkbox" value="ads" onchange="limitRoleChecks(this)"> Publicités</label>
+              <label class="role-check"><input type="checkbox" value="registrations" onchange="limitRoleChecks(this)"> Inscriptions</label>
+              <label class="role-check"><input type="checkbox" value="ops" onchange="limitRoleChecks(this)"> Opérations (livraisons)</label>
+              <label class="role-check"><input type="checkbox" value="super_admin" onchange="limitRoleChecks(this)"> Super admin</label>
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-yellow" style="margin-top:14px" onclick="createManager()">Créer le compte</button>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Comptes gestionnaires</h2></div>
+        <table>
+          <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Créé</th><th></th></tr></thead>
+          <tbody id="managersTableBody"><tr class="empty-row"><td colspan="5">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODALE DE DÉTAIL -->
+<div class="modal-overlay" id="detailModal" onclick="if(event.target===this) closeModal()">
+  <div class="modal-card">
+    <div class="modal-head"><h2 id="modalTitle">Détail</h2><button class="modal-close" onclick="closeModal()">✕</button></div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<!-- ÉCRAN DE CONNEXION -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-card">
+    <div class="badge">JL</div>
+    <h2 id="loginTitle">Administration</h2>
+    <p id="loginSubtitle">Connectez-vous pour accéder au back-office Je Livre</p>
+    <input id="loginName" placeholder="Nom complet" style="display:none" autocomplete="name">
+    <input id="loginEmail" type="email" placeholder="Email" autocomplete="username">
+    <input id="loginPassword" type="password" placeholder="Mot de passe (6 caractères min.)" autocomplete="current-password">
+    <button id="loginSubmitBtn" onclick="adminLogin()">Se connecter</button>
+    <div class="login-error" id="loginError"></div>
+    <div class="login-hint" id="loginHint"></div>
+  </div>
+</div>
+
+<script>
+  const OUAGA_CENTER = [12.3714, -1.5197];
+  // Voir je-livre-prototype.html pour l'explication : le serveur OSM de
+  // démo bloque les apps en production. Renseignez la même clé Stadia Maps
+  // ici (gardez les deux fichiers synchronisés).
+  const MAP_TILE_URL = 'https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}{r}.png?api_key=ee5e9ceb-b4f5-4f79-8f03-39be79c4df87';
+  const MAP_TILE_ATTRIBUTION = '&copy; <a href="https://stadiamaps.com/" target="_blank">Stadia Maps</a> &copy; <a href="https://openmaptiles.org/" target="_blank">OpenMapTiles</a> &copy; OpenStreetMap contributors';
+  const firebaseConfig = {
+    apiKey: "AIzaSyCHFPQQYQ8FcF011AkaHGunISYxiWm7iFY",
+    authDomain: "je-livre-509fd.firebaseapp.com",
+    projectId: "je-livre-509fd",
+    storageBucket: "je-livre-509fd.firebasestorage.app",
+    messagingSenderId: "591301628205",
+    appId: "1:591301628205:web:c5cb55c7aea3c79effc3a4",
+    measurementId: "G-5J4G5GMED4",
+    databaseURL: "https://je-livre-509fd-default-rtdb.europe-west1.firebasedatabase.app",
+  };
+  if (typeof firebase !== 'undefined' && !firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  const db = (typeof firebase !== 'undefined') ? firebase.database() : null;
+
+  function formatFCFA(n){ return (n || 0).toLocaleString('fr-FR') + ' F'; }
+  function timeAgo(ts){
+    if(!ts) return '—';
+    const diffMin = Math.round((Date.now() - ts) / 60000);
+    if(diffMin < 1) return "à l'instant";
+    if(diffMin < 60) return 'il y a ' + diffMin + ' min';
+    const diffH = Math.round(diffMin / 60);
+    if(diffH < 24) return 'il y a ' + diffH + ' h';
+    return 'il y a ' + Math.round(diffH / 24) + ' j';
+  }
+
+  // ---- Navigation ----
+  function switchAdminPage(page){
+    document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + page));
+    document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.page === page));
+    const titles = { overview:'Tableau de bord', live:'Connectés en direct', registrations:'Inscriptions', deliveries:'Livraisons en cours', support:'Service client', ads:'Publicités', withdrawals:'Retraits', commissions:'Commissions', remittances:'Reversements', payments:'Paiements' };
+    document.getElementById('pageTitle').textContent = titles[page] || '';
+    if(page === 'live') setTimeout(() => { if(liveMap) liveMap.invalidateSize(); }, 100);
+    if(page === 'ads') initAdForm();
+  }
+  window.switchAdminPage = switchAdminPage;
+
+  // ---- Statut de connexion ----
+  if(db){
+    db.ref('.info/connected').on('value', (snap) => {
+      const ok = snap.val() === true;
+      document.getElementById('connDot').style.background = ok ? 'var(--green)' : '#DC3545';
+      document.getElementById('connLabel').textContent = ok ? 'Connecté' : 'Déconnecté';
+    });
+  }
+
+  // ================= Livreurs en direct =================
+  let overviewMap = null, liveMap = null;
+  let overviewMarkers = {}, liveMarkers = {};
+
+  function renderDriverTables(all){
+    const drivers = Object.entries(all || {});
+    const online = drivers.filter(([, d]) => d && d.online);
+    document.getElementById('kpiOnline').textContent = online.length;
+    document.getElementById('navLiveCount').textContent = online.length;
+    document.getElementById('liveCountLabel').textContent = drivers.length + ' au total, ' + online.length + ' en ligne';
+
+    const tbody = document.getElementById('liveTableBody');
+    if(drivers.length === 0){
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Aucun livreur pour le moment.</td></tr>';
+    } else {
+      tbody.innerHTML = drivers.map(([id, d]) => `
+        <tr>
+          <td><b>${escapeHtml(d.name || '—')}</b></td>
+          <td>${id}</td>
+          <td>${escapeHtml(d.vehicle || '—')}</td>
+          <td><span class="pill ${d.online ? 'online' : 'offline'}">${d.online ? 'En ligne' : 'Hors ligne'}</span></td>
+          <td>${timeAgo(d.updatedAt)}</td>
+        </tr>
+      `).join('');
+    }
+
+    [{ mapVar:'overviewMap', markers:'overviewMarkers', el:'mapOverview' }, { mapVar:'liveMap', markers:'liveMarkers', el:'liveMap' }].forEach((cfg) => {
+      const mapInstance = cfg.mapVar === 'overviewMap' ? overviewMap : liveMap;
+      if(!mapInstance) return;
+      const markers = cfg.mapVar === 'overviewMap' ? overviewMarkers : liveMarkers;
+      const seen = new Set();
+      online.forEach(([id, d]) => {
+        if(typeof d.lat !== 'number') return;
+        seen.add(id);
+        if(markers[id]){ markers[id].setLatLng([d.lat, d.lng]); }
+        else {
+          const icon = L.divIcon({ className:'', html:'<div style="width:14px;height:14px;border-radius:50%;background:#22C55E;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.35)"></div>', iconSize:[14,14] });
+          markers[id] = L.marker([d.lat, d.lng], { icon }).addTo(mapInstance).bindPopup((d.name || id) + ' · ' + (d.vehicle || ''));
+        }
+      });
+      Object.keys(markers).forEach((id) => { if(!seen.has(id)){ mapInstance.removeLayer(markers[id]); delete markers[id]; } });
+    });
+  }
+
+  function initMaps(){
+    if(!overviewMap){
+      overviewMap = L.map('mapOverview', { zoomControl:false }).setView(OUAGA_CENTER, 12);
+      L.tileLayer(MAP_TILE_URL, { attribution: MAP_TILE_ATTRIBUTION, maxZoom: 20 }).addTo(overviewMap);
+    }
+    if(!liveMap){
+      liveMap = L.map('liveMap', { zoomControl:true }).setView(OUAGA_CENTER, 12);
+      L.tileLayer(MAP_TILE_URL, { attribution: MAP_TILE_ATTRIBUTION, maxZoom: 20 }).addTo(liveMap);
+    }
+  }
+
+  if(db){
+    db.ref('drivers').on('value', (snap) => { allDriversCache = snap.val() || {}; renderDriverTables(allDriversCache); });
+    db.ref('shops').on('value', (snap) => { allShopsCache = snap.val() || {}; });
+  }
+
+  // ================= Inscriptions =================
+  let regFilter = 'all';
+  let allRegistrations = {};
+
+  function setRegFilter(el, filter){
+    document.querySelectorAll('#regTabRow .tab-btn').forEach((b) => b.classList.remove('on'));
+    el.classList.add('on');
+    regFilter = filter;
+    renderRegistrations();
+  }
+  window.setRegFilter = setRegFilter;
+
+  function renderRegistrations(){
+    const el = document.getElementById('registrationsList');
+    const entries = Object.entries(allRegistrations).filter(([, r]) => regFilter === 'all' || (r && r.type === regFilter));
+    const pendingCount = Object.values(allRegistrations).filter((r) => r && r.status === 'pending').length;
+    document.getElementById('kpiPending').textContent = pendingCount;
+    document.getElementById('navRegCount').textContent = pendingCount;
+
+    if(entries.length === 0){
+      el.innerHTML = '<div class="empty-state"><i data-feather="inbox"></i><div>Aucune inscription pour le moment.</div></div>';
+      feather.replace({ 'stroke-width':2 });
+      return;
+    }
+    entries.sort((a,b) => (b[1].createdAt||0) - (a[1].createdAt||0));
+    const typeLabels = { livreur:'Livreur indépendant', entreprise:'Entreprise de livraison', boutique:'Boutique' };
+    el.innerHTML = `
+      <table>
+        <thead><tr><th>Nom</th><th>Type</th><th>Contact</th><th>Statut</th><th>Reçue</th><th></th></tr></thead>
+        <tbody>
+          ${entries.map(([id, r]) => `
+            <tr style="cursor:pointer" onclick="showRegistrationDetail('${id}')">
+              <td><b>${escapeHtml(r.nom || r.prenom || '—')}</b></td>
+              <td>${typeLabels[r.type] || r.type}</td>
+              <td>${escapeHtml(r.phone || '—')}</td>
+              <td><span class="pill ${r.status}">${r.status === 'pending' ? 'En attente' : r.status === 'approved' ? 'Approuvée' : 'Rejetée'}</span></td>
+              <td>${timeAgo(r.createdAt)}</td>
+              <td style="text-align:right; white-space:nowrap;" onclick="event.stopPropagation()">
+                ${r.status === 'pending' ? `
+                  <button class="btn btn-outline btn-sm" onclick="setRegStatus('${id}','rejected')">Rejeter</button>
+                  <button class="btn btn-yellow btn-sm" onclick="setRegStatus('${id}','approved')">Approuver</button>
+                ` : `<span style="font-size:11.5px;color:var(--text-soft)">Traitée</span>`}
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  function setRegStatus(id, status){
+    if(!db) return;
+    db.ref('registrations/' + id).update({ status });
+    // Pour un livreur, l'inscription est indexée par son uid (compte réel
+    // créé par e-mail à l'inscription) : on répercute la décision sur son
+    // profil "drivers" afin que la connexion à l'espace livreur se débloque
+    // ou se bloque immédiatement, sans étape manuelle supplémentaire.
+    const reg = allRegistrations[id];
+    if(reg && reg.type === 'livreur'){
+      db.ref('drivers/' + id).update({ status, approved: status === 'approved' });
+    }
+    if(reg && reg.type === 'boutique'){
+      db.ref('shops/' + id).update({ status, approved: status === 'approved' });
+    }
+    if(reg && reg.type === 'entreprise'){
+      db.ref('enterprises/' + id).update({ status, approved: status === 'approved' });
+    }
+  }
+  window.setRegStatus = setRegStatus;
+
+  if(db){
+    db.ref('registrations').on('value', (snap) => {
+      allRegistrations = snap.val() || {};
+      renderRegistrations();
+    });
+  }
+
+  // ================= Livraisons & commandes =================
+  let allDeliveryRequests = {};
+  let allMarketplaceOrders = {};
+  let allDriversCache = {};
+  let allShopsCache = {};
+
+  if(db){
+    db.ref('deliveryRequests').on('value', (snap) => {
+      allDeliveryRequests = snap.val() || {};
+      const entries = Object.entries(allDeliveryRequests);
+      const active = entries.filter(([, r]) => r && (r.status === 'pending' || r.status === 'assigned'));
+      document.getElementById('kpiDeliveries').textContent = active.length;
+      const tbody = document.getElementById('deliveriesTableBody');
+      if(entries.length === 0){
+        tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Aucune demande pour le moment.</td></tr>';
+        return;
+      }
+      entries.sort((a,b) => (b[1].createdAt||0) - (a[1].createdAt||0));
+      tbody.innerHTML = entries.slice(0, 30).map(([id, r]) => `
+        <tr style="cursor:pointer" onclick="showDeliveryDetail('${id}')">
+          <td><b>${r.trackId || id}</b></td>
+          <td><span class="pill ${r.status === 'pending' ? 'pending' : r.status === 'assigned' ? 'assigned' : 'done'}">${r.status === 'pending' ? 'En recherche' : r.status === 'assigned' ? 'Assignée' : 'Terminée'}</span></td>
+          <td>${(r.distanceKm || 0).toFixed(1)} km</td>
+          <td>${formatFCFA(r.price)}</td>
+          <td>${timeAgo(r.createdAt)}</td>
+        </tr>
+      `).join('');
+    });
+
+    db.ref('marketplaceOrders').on('value', (snap) => {
+      allMarketplaceOrders = snap.val() || {};
+      const entries = Object.entries(allMarketplaceOrders);
+      const active = entries.filter(([, o]) => o && !['delivered', 'completed', 'cancelled', 'awaiting_payment'].includes(o.status));
+      document.getElementById('kpiOrders').textContent = active.length;
+      const tbody = document.getElementById('ordersTableBody');
+      if(entries.length === 0){
+        tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Aucune commande pour le moment.</td></tr>';
+        return;
+      }
+      entries.sort((a,b) => (b[1].createdAt||0) - (a[1].createdAt||0));
+      const statusLabels = { awaiting_payment:'Paiement en attente', pending_seller:'À confirmer (vendeur)', pending_delivery:'Recherche livreur', assigned:'Livreur assigné', delivered:'Livrée', completed:'Terminée', cancelled:'Annulée' };
+      tbody.innerHTML = entries.slice(0, 30).map(([id, o]) => `
+        <tr style="cursor:pointer" onclick="showOrderDetail('${id}')">
+          <td><b>${escapeHtml(o.orderId || id)}</b></td>
+          <td>${escapeHtml(o.shopName || '—')}</td>
+          <td><span class="pill pending">${statusLabels[o.status] || o.status}</span></td>
+          <td>${formatFCFA(o.total)}</td>
+        </tr>
+      `).join('');
+    });
+  }
+
+  // ================= Modale de détail =================
+  function openModal(title, bodyHtml){
+    document.getElementById('modalTitle').textContent = title;
+    document.getElementById('modalBody').innerHTML = bodyHtml;
+    document.getElementById('detailModal').classList.add('show');
+  }
+  function closeModal(){
+    document.getElementById('detailModal').classList.remove('show');
+    if(activeTicketChatRef){ activeTicketChatRef.off(); activeTicketChatRef = null; }
+    activeTicketId = null;
+  }
+  window.closeModal = closeModal;
+
+  // Empêche toute injection de code (XSS) via des champs remplis par les
+  // utilisateurs (inscriptions, messages, noms de livreurs...) et affichés
+  // tels quels dans le back-office admin.
+  function escapeHtml(str){
+    if(str == null) return '';
+    return String(str).replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  }
+
+  function detailRow(label, value){
+    return `<div class="detail-row"><span>${escapeHtml(label)}</span><span>${value != null && value !== '' ? escapeHtml(value) : '—'}</span></div>`;
+  }
+
+  function docLinkRow(label, url){
+    if(!url) return detailRow(label, null);
+    return `<div class="detail-row"><span>${escapeHtml(label)}</span><span><a href="${escapeHtml(url)}" target="_blank" rel="noopener">Voir le document</a></span></div>`;
+  }
+
+  function showRegistrationDetail(id){
+    const r = allRegistrations[id];
+    if(!r) return;
+    const typeLabels = { livreur:'Livreur indépendant', entreprise:'Entreprise de livraison', boutique:'Boutique' };
+    const photoUrl = r.photoUrl || r.logoUrl;
+    const photoHtml = photoUrl ? `<img src="${escapeHtml(photoUrl)}" style="width:100%;max-width:220px;border-radius:12px;display:block;margin:0 auto 14px">` : '';
+    let body = photoHtml
+      + detailRow('Nom', r.nom) + detailRow('Prénom', r.prenom) + detailRow('Type', typeLabels[r.type] || r.type)
+      + detailRow('Téléphone', r.phone) + detailRow('Adresse', r.adresse);
+    if(r.type === 'livreur'){
+      body += detailRow('Véhicule', r.vehicule) + detailRow('Modèle / immatriculation', r.vehiculeModele) + docLinkRow("Pièce d'identité", r.idDocUrl);
+    } else if(r.type === 'boutique'){
+      body += detailRow('Catégorie', r.categorie) + docLinkRow("Pièce d'identité du propriétaire", r.ownerIdUrl) + docLinkRow('Registre de commerce', r.rccmUrl);
+    } else if(r.type === 'entreprise'){
+      body += detailRow('Secteur', r.secteur) + detailRow('Taille de flotte souhaitée', r.tailleFlotte) + docLinkRow("Pièce d'identité du responsable", r.ownerIdUrl) + docLinkRow('Registre de commerce (RCCM)', r.rccmUrl);
+    }
+    body += detailRow('Statut', r.status === 'pending' ? 'En attente' : r.status === 'approved' ? 'Approuvée' : 'Rejetée') + detailRow('Reçue', timeAgo(r.createdAt));
+    if(r.status === 'pending'){
+      body += `<div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-outline" style="flex:1" onclick="setRegStatus('${id}','rejected'); closeModal();">Rejeter</button>
+        <button class="btn btn-yellow" style="flex:1" onclick="setRegStatus('${id}','approved'); closeModal();">Approuver</button>
+      </div>`;
+    }
+    openModal('Inscription', body);
+  }
+  window.showRegistrationDetail = showRegistrationDetail;
+
+  function showDeliveryDetail(id){
+    const r = allDeliveryRequests[id];
+    if(!r) return;
+    const driver = r.assignedDriverId ? allDriversCache[r.assignedDriverId] : null;
+    const statusLabel = r.status === 'pending' ? 'En recherche de livreur' : r.status === 'assigned' ? 'Livreur assigné' : 'Terminée';
+    const html = `
+      <div class="detail-section">
+        <h3>Livraison</h3>
+        ${detailRow('Suivi', r.trackId || id)}
+        ${detailRow('Statut', statusLabel)}
+        ${detailRow('Distance', (r.distanceKm||0).toFixed(1) + ' km')}
+        ${detailRow('Prix', formatFCFA(r.price))}
+        ${detailRow('Créée', timeAgo(r.createdAt))}
+      </div>
+      <div class="detail-section">
+        <h3>Demandeur / Expéditeur</h3>
+        ${detailRow('Téléphone', r.senderPhone)}
+        ${detailRow('Adresse', r.senderAddress)}
+        ${detailRow('Coordonnées', r.senderCoords ? r.senderCoords.lat.toFixed(5) + ', ' + r.senderCoords.lng.toFixed(5) : null)}
+      </div>
+      ${r.recipientCoords ? `
+      <div class="detail-section">
+        <h3>Destinataire</h3>
+        ${detailRow('Téléphone', r.recipientPhone)}
+        ${detailRow('Adresse', r.recipientAddress)}
+        ${detailRow('Coordonnées', r.recipientCoords.lat.toFixed(5) + ', ' + r.recipientCoords.lng.toFixed(5))}
+      </div>` : ''}
+      <div class="detail-section">
+        <h3>Livreur</h3>
+        ${r.assignedDriverId ? `
+          ${detailRow('Nom', r.assignedDriverName)}
+          ${detailRow('Véhicule', r.assignedVehicle)}
+          ${detailRow('Identifiant', r.assignedDriverId)}
+          ${driver ? detailRow('Statut actuel', driver.online ? 'En ligne' : 'Hors ligne') : ''}
+          ${driver ? detailRow('Dernière position', driver.lat ? driver.lat.toFixed(5) + ', ' + driver.lng.toFixed(5) : null) : ''}
+        ` : '<div class="empty-state" style="padding:10px 0">Pas encore assignée à un livreur.</div>'}
+      </div>
+    `;
+    openModal('Livraison ' + (r.trackId || id), html);
+  }
+  window.showDeliveryDetail = showDeliveryDetail;
+
+  function showOrderDetail(id){
+    const o = allMarketplaceOrders[id];
+    if(!o) return;
+    const driver = o.assignedDriverId ? allDriversCache[o.assignedDriverId] : null;
+    const statusLabels = { awaiting_payment:'Paiement en attente', pending_seller:'À confirmer par le vendeur', pending_delivery:'Recherche de livreur', assigned:'Livreur assigné', delivered:'Livrée', completed:'Terminée', cancelled:'Annulée' };
+    const itemsHtml = (o.items || []).map((it) => detailRow(it.name, it.qty + ' × ' + formatFCFA(it.price))).join('');
+    const html = `
+      <div class="detail-section">
+        <h3>Commande</h3>
+        ${detailRow('Référence', o.orderId || id)}
+        ${detailRow('Statut', statusLabels[o.status] || o.status)}
+        ${detailRow('Sous-total', formatFCFA(o.subtotal))}
+        ${detailRow('Frais de livraison', formatFCFA(o.deliveryFee))}
+        ${detailRow('Total', formatFCFA(o.total))}
+        ${detailRow('Créée', timeAgo(o.createdAt))}
+      </div>
+      <div class="detail-section"><h3>Articles</h3>${itemsHtml || '—'}</div>
+      <div class="detail-section">
+        <h3>Client</h3>
+        ${detailRow('Téléphone', o.clientPhone)}
+        ${detailRow('Coordonnées', o.clientCoords ? o.clientCoords.lat.toFixed(5) + ', ' + o.clientCoords.lng.toFixed(5) : null)}
+      </div>
+      <div class="detail-section">
+        <h3>Vendeur</h3>
+        ${detailRow('Boutique', o.shopName)}
+      </div>
+      <div class="detail-section">
+        <h3>Livreur</h3>
+        ${o.assignedDriverId ? `
+          ${detailRow('Nom', o.assignedDriverName)}
+          ${detailRow('Véhicule', o.assignedVehicle)}
+          ${detailRow('Identifiant', o.assignedDriverId)}
+          ${driver ? detailRow('Statut actuel', driver.online ? 'En ligne' : 'Hors ligne') : ''}
+        ` : '<div class="empty-state" style="padding:10px 0">Pas encore acceptée par un livreur.</div>'}
+      </div>
+    `;
+    openModal('Commande ' + (o.orderId || id), html);
+  }
+  window.showOrderDetail = showOrderDetail;
+
+  // ================= Service client =================
+  let supportFilter = 'open';
+  let allTickets = {};
+
+  function setSupportFilter(el, filter){
+    document.querySelectorAll('#page-support .tab-btn').forEach((b) => b.classList.remove('on'));
+    el.classList.add('on');
+    supportFilter = filter;
+    renderTickets();
+  }
+  window.setSupportFilter = setSupportFilter;
+
+  function renderTickets(){
+    const el = document.getElementById('supportList');
+    const entries = Object.entries(allTickets).filter(([, t]) => {
+      if(supportFilter === 'all') return true;
+      if(supportFilter === 'open') return t && t.status !== 'resolved';
+      return t && t.status === 'resolved';
+    });
+    const openCount = Object.values(allTickets).filter((t) => t && t.status !== 'resolved').length;
+    document.getElementById('kpiTickets').textContent = openCount;
+    document.getElementById('navSupportCount').textContent = openCount;
+
+    if(entries.length === 0){
+      el.innerHTML = '<div class="empty-state"><i data-feather="check-circle"></i><div>Rien à traiter ici.</div></div>';
+      feather.replace({ 'stroke-width':2 });
+      return;
+    }
+    entries.sort((a,b) => (b[1].lastMessageAt || b[1].createdAt || 0) - (a[1].lastMessageAt || a[1].createdAt || 0));
+    el.innerHTML = entries.map(([id, t]) => `
+      <div class="ticket-card" style="cursor:pointer" onclick="openTicketChat('${id}')">
+        <div class="top">
+          <div><b>${t.subject || 'Sans objet'}</b><div class="meta">${t.clientName || 'Client'} · ${t.clientPhone || '—'} · ${timeAgo(t.lastMessageAt || t.createdAt)}</div></div>
+          <span class="pill ${t.status === 'resolved' ? 'done' : 'pending'}">${t.status === 'resolved' ? 'Résolu' : 'Ouvert'}</span>
+        </div>
+        <div class="msg" id="ticketPreview-${id}">Voir la conversation…</div>
+      </div>
+    `).join('');
+  }
+
+  // ---- Fil de discussion (modale) ----
+  let activeTicketChatRef = null;
+  let activeTicketId = null;
+
+  function openTicketChat(id){
+    activeTicketId = id;
+    const t = allTickets[id] || {};
+    const isResolved = t.status === 'resolved';
+    openModal(t.subject || 'Conversation', `
+      <div class="chat-thread" id="adminChatThread"><div class="empty-state">Chargement…</div></div>
+      <div class="reply-row" style="margin-top:12px">
+        <textarea id="adminChatInput" placeholder="Écrire une réponse…"></textarea>
+        <button class="btn btn-black btn-sm" onclick="sendAdminReply()">Envoyer</button>
+      </div>
+      <button class="btn btn-outline" style="margin-top:10px;width:100%" onclick="toggleTicketStatus()">${isResolved ? 'Rouvrir la conversation' : 'Marquer résolu'}</button>
+    `);
+    if(activeTicketChatRef) activeTicketChatRef.off();
+    activeTicketChatRef = db.ref('supportTickets/' + id + '/messages');
+    activeTicketChatRef.on('value', (snap) => {
+      const all = snap.val() || {};
+      const msgs = Object.values(all).sort((a,b) => (a.createdAt||0) - (b.createdAt||0));
+      const threadEl = document.getElementById('adminChatThread');
+      if(!threadEl) return;
+      threadEl.innerHTML = msgs.length
+        ? msgs.map((m) => `<div class="chat-bubble-admin ${m.sender === 'admin' ? 'me' : 'them'}">${escapeHtml(m.text)}</div>`).join('')
+        : '<div class="empty-state">Aucun message pour le moment.</div>';
+      threadEl.scrollTop = threadEl.scrollHeight;
+    });
+  }
+  window.openTicketChat = openTicketChat;
+
+  function sendAdminReply(){
+    if(!db || !activeTicketId) return;
+    const input = document.getElementById('adminChatInput');
+    const text = (input.value || '').trim();
+    if(!text) return;
+    input.value = '';
+    const msgId = 'm_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    db.ref('supportTickets/' + activeTicketId + '/messages/' + msgId).set({
+      sender: 'admin', text, createdAt: firebase.database.ServerValue.TIMESTAMP,
+    });
+    db.ref('supportTickets/' + activeTicketId).update({ status: 'open', lastMessageAt: firebase.database.ServerValue.TIMESTAMP });
+  }
+  window.sendAdminReply = sendAdminReply;
+
+  function toggleTicketStatus(){
+    if(!db || !activeTicketId) return;
+    const t = allTickets[activeTicketId] || {};
+    db.ref('supportTickets/' + activeTicketId).update({ status: t.status === 'resolved' ? 'open' : 'resolved' });
+    closeModal();
+  }
+  window.toggleTicketStatus = toggleTicketStatus;
+
+  if(db){
+    db.ref('supportTickets').on('value', (snap) => {
+      allTickets = snap.val() || {};
+      renderTickets();
+    });
+  }
+
+  // ================= Notifications (individuelles ou groupées) =================
+  let allNotifications = {};
+
+  function toggleNotifDriverSelect(){
+    const target = document.getElementById('notifTarget').value;
+    document.getElementById('notifDriverSelectWrap').style.display = target === 'driver' ? 'block' : 'none';
+    document.getElementById('notifVendorSelectWrap').style.display = target === 'vendor' ? 'block' : 'none';
+    if(target === 'driver'){
+      const sel = document.getElementById('notifDriverSelect');
+      sel.innerHTML = Object.entries(allDriversCache).map(([id, d]) => `<option value="${id}">${escapeHtml(d.name || id)}</option>`).join('') || '<option value="">Aucun livreur</option>';
+    }
+    if(target === 'vendor'){
+      const sel = document.getElementById('notifVendorSelect');
+      sel.innerHTML = Object.entries(allShopsCache).map(([id, s]) => `<option value="${id}">${escapeHtml(s.name || id)}</option>`).join('') || '<option value="">Aucune boutique</option>';
+    }
+  }
+  window.toggleNotifDriverSelect = toggleNotifDriverSelect;
+
+  function sendNotification(){
+    if(!db) return;
+    const title = (document.getElementById('notifTitle').value || '').trim();
+    const message = (document.getElementById('notifMessage').value || '').trim();
+    const target = document.getElementById('notifTarget').value;
+    if(!title || !message){ alert('Titre et message sont requis.'); return; }
+
+    let targetValue = target;
+    let targetLabel = 'Tous les utilisateurs';
+    if(target === 'all_drivers'){ targetLabel = 'Tous les livreurs'; }
+    if(target === 'all_vendors'){ targetLabel = 'Tous les vendeurs'; }
+    if(target === 'driver'){
+      const driverId = document.getElementById('notifDriverSelect').value;
+      if(!driverId){ alert('Choisis un livreur.'); return; }
+      targetValue = 'driver:' + driverId;
+      targetLabel = 'Livreur : ' + ((allDriversCache[driverId] || {}).name || driverId);
+    }
+    if(target === 'vendor'){
+      const shopId = document.getElementById('notifVendorSelect').value;
+      if(!shopId){ alert('Choisis une boutique.'); return; }
+      targetValue = 'vendor:' + shopId;
+      targetLabel = 'Boutique : ' + ((allShopsCache[shopId] || {}).name || shopId);
+    }
+
+    const id = 'notif_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    db.ref('notifications/' + id).set({
+      title, message, target: targetValue, targetLabel,
+      createdAt: firebase.database.ServerValue.TIMESTAMP,
+    }).then(() => {
+      document.getElementById('notifTitle').value = '';
+      document.getElementById('notifMessage').value = '';
+    });
+  }
+  window.sendNotification = sendNotification;
+
+  function renderNotifHistory(){
+    const el = document.getElementById('notifHistoryList');
+    if(!el) return;
+    const entries = Object.entries(allNotifications);
+    if(entries.length === 0){
+      el.innerHTML = '<div class="empty-state">Aucune notification envoyée pour le moment.</div>';
+      return;
+    }
+    entries.sort((a,b) => (b[1].createdAt||0) - (a[1].createdAt||0));
+    el.innerHTML = entries.slice(0, 20).map(([, n]) => `
+      <div class="ticket-card">
+        <div class="top">
+          <div><b>${n.title}</b><div class="meta">${n.targetLabel || n.target} · ${timeAgo(n.createdAt)}</div></div>
+        </div>
+        <div class="msg">${n.message}</div>
+      </div>
+    `).join('');
+  }
+
+  if(db){
+    db.ref('notifications').on('value', (snap) => {
+      allNotifications = snap.val() || {};
+      renderNotifHistory();
+    });
+  }
+
+  // ================= Retraits =================
+  let allWithdrawals = {};
+  function renderWithdrawals(){
+    const tbody = document.getElementById('withdrawalsTableBody');
+    if(!tbody) return;
+    const entries = Object.entries(allWithdrawals);
+    const pendingCount = entries.filter(([, w]) => w.status === 'pending').length;
+    const navBadge = document.getElementById('navWithdrawalsCount');
+    if(navBadge) navBadge.textContent = String(pendingCount);
+    if(entries.length === 0){
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Aucune demande de retrait pour le moment.</td></tr>';
+      return;
+    }
+    entries.sort((a, b) => (b[1].requestedAt || 0) - (a[1].requestedAt || 0));
+    const statusLabels = { pending: 'En attente', paid: 'Versé', rejected: 'Refusé' };
+    tbody.innerHTML = entries.map(([id, w]) => `
+      <tr>
+        <td><b>${escapeHtml(w.shopName || w.shopId)}</b></td>
+        <td>${formatFCFA(w.amount)}</td>
+        <td>${escapeHtml(w.phone || '—')}</td>
+        <td><span class="pill ${w.status === 'paid' ? 'approved' : w.status === 'rejected' ? 'rejected' : 'pending'}">${statusLabels[w.status] || w.status}</span></td>
+        <td>${timeAgo(w.requestedAt)}</td>
+        <td style="text-align:right; white-space:nowrap;">
+          ${w.status === 'pending' ? `
+            <button class="btn btn-outline btn-sm" onclick="setWithdrawalStatus('${id}','rejected')">Refuser</button>
+            <button class="btn btn-yellow btn-sm" onclick="setWithdrawalStatus('${id}','paid')">Marquer comme versé</button>
+          ` : ''}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function setWithdrawalStatus(id, status){
+    if(!db) return;
+    db.ref('withdrawalRequests/' + id).update({ status, processedAt: firebase.database.ServerValue.TIMESTAMP });
+  }
+  window.setWithdrawalStatus = setWithdrawalStatus;
+
+  // ================= Commissions de la plateforme (parrainages déduits) =================
+  if(db){
+    db.ref('platformStats').on('value', (snap) => {
+      const s = snap.val() || {};
+      const simple = s.commissionSimple || 0;
+      const flat = s.commissionFlat || 0;
+      const payouts = s.referralPayouts || 0;
+      const simpleEl = document.getElementById('kpiCommissionSimple');
+      const flatEl = document.getElementById('kpiCommissionFlat');
+      const payoutsEl = document.getElementById('kpiReferralPayouts');
+      const netEl = document.getElementById('kpiCommissionNet');
+      if(simpleEl) simpleEl.textContent = formatFCFA(simple);
+      if(flatEl) flatEl.textContent = formatFCFA(flat);
+      if(payoutsEl) payoutsEl.textContent = '− ' + formatFCFA(payouts);
+      if(netEl) netEl.textContent = formatFCFA(simple + flat - payouts);
+    });
+  }
+
+  // ================= Commissions livreurs (Express/Groupée) =================
+  let allCommissions = {};
+  function renderCommissions(){
+    const tbody = document.getElementById('commissionsTableBody');
+    if(!tbody) return;
+    const entries = Object.entries(allCommissions);
+    const pendingCount = entries.filter(([, c]) => c.status === 'pending').length;
+    const navBadge = document.getElementById('navCommissionsCount');
+    if(navBadge) navBadge.textContent = String(pendingCount);
+    if(entries.length === 0){
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Aucune commission déclarée pour le moment.</td></tr>';
+      return;
+    }
+    entries.sort((a, b) => (b[1].declaredAt || 0) - (a[1].declaredAt || 0));
+    const statusLabels = { pending: 'En attente', confirmed: 'Confirmée', rejected: 'Refusée' };
+    tbody.innerHTML = entries.map(([id, c]) => `
+      <tr>
+        <td><b>${escapeHtml(c.driverName || c.driverId)}</b></td>
+        <td>${formatFCFA(c.amount)}</td>
+        <td><span class="pill ${c.status === 'confirmed' ? 'approved' : c.status === 'rejected' ? 'rejected' : 'pending'}">${statusLabels[c.status] || c.status}</span></td>
+        <td>${timeAgo(c.declaredAt)}</td>
+        <td style="text-align:right; white-space:nowrap;">
+          ${c.status === 'pending' ? `
+            <button class="btn btn-outline btn-sm" onclick="setCommissionStatus('${id}','rejected')">Refuser</button>
+            <button class="btn btn-yellow btn-sm" onclick="setCommissionStatus('${id}','confirmed')">Confirmer le paiement</button>
+          ` : ''}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function setCommissionStatus(id, status){
+    if(!db) return;
+    const c = allCommissions[id];
+    db.ref('commissionPayments/' + id).update({ status, processedAt: firebase.database.ServerValue.TIMESTAMP });
+    // Une fois confirmé, on solde réellement la commission due du livreur,
+    // ce qui débloque à nouveau l'acceptation de nouvelles livraisons.
+    if(status === 'confirmed' && c && c.driverId){
+      db.ref('drivers/' + c.driverId).update({ pendingCommission: firebase.database.ServerValue.increment(-c.amount) });
+      db.ref('platformStats').update({ commissionFlat: firebase.database.ServerValue.increment(c.amount) });
+    }
+  }
+  window.setCommissionStatus = setCommissionStatus;
+
+  if(db){
+    db.ref('commissionPayments').on('value', (snap) => {
+      allCommissions = snap.val() || {};
+      renderCommissions();
+    });
+  }
+
+  // ================= Reversements boutiques (encaissé en espèces par un livreur) =================
+  let allRemittances = {};
+  function renderRemittances(){
+    const tbody = document.getElementById('remittancesTableBody');
+    if(!tbody) return;
+    const entries = Object.entries(allRemittances);
+    const pendingCount = entries.filter(([, r]) => r.status === 'declared').length;
+    const navBadge = document.getElementById('navRemittancesCount');
+    if(navBadge) navBadge.textContent = String(pendingCount);
+    if(entries.length === 0){
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Aucun reversement pour le moment.</td></tr>';
+      return;
+    }
+    entries.sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+    const statusLabels = { owed: 'Dû (pas encore déclaré)', declared: 'Déclaré par le livreur', confirmed: 'Confirmé' };
+    tbody.innerHTML = entries.map(([id, r]) => `
+      <tr>
+        <td><b>${escapeHtml(r.driverName || r.driverId)}</b></td>
+        <td>${escapeHtml(r.shopName || '—')}</td>
+        <td>${escapeHtml(r.orderId || '—')}</td>
+        <td>${formatFCFA(r.amount)}</td>
+        <td><span class="pill ${r.status === 'confirmed' ? 'approved' : r.status === 'declared' ? 'pending' : 'rejected'}">${statusLabels[r.status] || r.status}</span></td>
+        <td style="text-align:right; white-space:nowrap;">
+          ${r.status === 'declared' ? `<button class="btn btn-yellow btn-sm" onclick="setRemittanceStatus('${id}','confirmed')">Confirmer</button>` : ''}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function setRemittanceStatus(id, status){
+    if(!db) return;
+    db.ref('remittances/' + id).update({ status, processedAt: firebase.database.ServerValue.TIMESTAMP });
+  }
+  window.setRemittanceStatus = setRemittanceStatus;
+
+  if(db){
+    db.ref('remittances').on('value', (snap) => {
+      allRemittances = snap.val() || {};
+      renderRemittances();
+    });
+  }
+
+  // ================= Paiements en ligne =================
+  // Ces données sont écrites uniquement par le serveur (fonctions Firebase) : ni un
+  // client ni cette page ne peuvent déclarer un paiement "reçu". L'admin peut seulement
+  // marquer une ligne "à vérifier" comme traitée une fois le cas réglé (remboursement...).
+  let allPayments = {};
+  const PAYMENT_STATUS = {
+    initiated:         { label: 'En attente',                       pill: 'pending',  review: false },
+    paid:              { label: 'Payé',                             pill: 'approved', review: false },
+    paid_needs_review: { label: 'À vérifier — commande annulée ou déjà payée', pill: 'rejected', review: true },
+    amount_mismatch:   { label: 'À vérifier — montant différent',   pill: 'rejected', review: true },
+    failed:            { label: 'Échoué',                           pill: 'pending',  review: false },
+    failed_to_create:  { label: 'Non démarré (prestataire)',        pill: 'pending',  review: false },
+  };
+  function renderPayments(){
+    const tbody = document.getElementById('paymentsTableBody');
+    if(!tbody) return;
+    const entries = Object.entries(allPayments);
+    const toReview = entries.filter(([, p]) => (PAYMENT_STATUS[p.status] || {}).review && !p.reviewedAt).length;
+    const badge = document.getElementById('navPaymentsCount');
+    if(badge) badge.textContent = String(toReview);
+    if(entries.length === 0){
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Aucun paiement en ligne pour le moment.</td></tr>';
+      return;
+    }
+    entries.sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+    tbody.innerHTML = entries.slice(0, 100).map(([id, p]) => {
+      const st = PAYMENT_STATUS[p.status] || { label: p.status, pill: 'pending', review: false };
+      const reviewed = !!p.reviewedAt;
+      return `
+        <tr>
+          <td><b>${escapeHtml(p.txId || id)}</b><div style="font-size:11px;color:var(--text-soft)">${escapeHtml(p.provider || '')}</div></td>
+          <td>${(p.orderIds || []).map(escapeHtml).join(', ') || '—'}${p.problemOrders ? `<div style="font-size:11px;color:#B3261E">Concernées : ${p.problemOrders.map(escapeHtml).join(', ')}</div>` : ''}</td>
+          <td>${formatFCFA(p.amount)}${p.status === 'amount_mismatch' && p.verifiedAmount != null ? `<div style="font-size:11px;color:#B3261E">Reçu : ${formatFCFA(p.verifiedAmount)}</div>` : ''}</td>
+          <td><span class="pill ${st.pill}">${st.label}</span>${reviewed ? '<div style="font-size:11px;color:var(--text-soft)">Traité</div>' : ''}</td>
+          <td>${timeAgo(p.createdAt)}</td>
+          <td style="text-align:right; white-space:nowrap;">
+            ${st.review && !reviewed ? `<button class="btn btn-yellow btn-sm" onclick="markPaymentReviewed('${escapeHtml(id)}')">Marquer traité</button>` : ''}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+  function markPaymentReviewed(id){
+    if(!db) return;
+    if(!confirm('Confirmez-vous avoir traité ce paiement (remboursement effectué ou écart expliqué) ?')) return;
+    db.ref('payments/' + id).update({ reviewedAt: firebase.database.ServerValue.TIMESTAMP });
+  }
+  window.markPaymentReviewed = markPaymentReviewed;
+
+  if(db){
+    db.ref('payments').on('value', (snap) => {
+      allPayments = snap.val() || {};
+      renderPayments();
+    });
+  }
+
+  if(db){
+    db.ref('withdrawalRequests').on('value', (snap) => {
+      allWithdrawals = snap.val() || {};
+      renderWithdrawals();
+    });
+  }
+
+  // ================= Publicités =================
+  let allAds = {};
+
+  const AD_SLOT_LABELS = Array.from({length:12}, (_, i) => String(i*2).padStart(2,'0') + 'h-' + String(i*2+2).padStart(2,'0') + 'h');
+  const AD_DAY_LABELS = { dim:'Dim', lun:'Lun', mar:'Mar', mer:'Mer', jeu:'Jeu', ven:'Ven', sam:'Sam' };
+
+  function adCardHtml(id, ad){
+    const daysLabel = (!ad.days || ad.days.length === 0 || ad.days.length === 7)
+      ? 'Tous les jours'
+      : ad.days.map((d) => AD_DAY_LABELS[d] || d).join(', ');
+    const slotLabel = AD_SLOT_LABELS[(ad.slot || 1) - 1] || '—';
+    return `
+      <div class="ad-item">
+        <div class="prev" style="${ad.image ? `background-image:url('${escapeHtml(ad.image)}')` : ''}"><b>${escapeHtml(ad.title || '')}</b></div>
+        <div class="body">
+          <p>${escapeHtml(ad.text || '')}</p>
+          <p style="word-break:break-all"><i data-feather="link" style="width:11px;height:11px;vertical-align:middle"></i> ${escapeHtml(ad.link || 'Aucun lien')}</p>
+          <p><b>${slotLabel}</b> · ${escapeHtml(daysLabel)}</p>
+          <div class="row">
+            <div class="ad-toggle ${ad.active === false ? 'off' : ''}" onclick="toggleAd('${id}', ${ad.active === false})"></div>
+            <button class="btn btn-red btn-sm" onclick="deleteAd('${id}')">Supprimer</button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderAds(){
+    const el = document.getElementById('adsGrid');
+    const entries = Object.entries(allAds);
+    if(entries.length === 0){
+      el.innerHTML = '<div class="empty-state"><i data-feather="image"></i><div>Aucune publicité créée pour le moment.</div></div>';
+      feather.replace({ 'stroke-width':2 });
+      return;
+    }
+    const byPosition = { home: [], marketplace: [] };
+    entries.forEach(([id, ad]) => { (byPosition[ad.position] || byPosition.home).push([id, ad]); });
+    byPosition.home.sort((a, b) => (a[1].slot || 1) - (b[1].slot || 1));
+    byPosition.marketplace.sort((a, b) => (a[1].slot || 1) - (b[1].slot || 1));
+    el.innerHTML =
+      '<h3 style="grid-column:1/-1;margin-top:4px">Espace 1 — Bannière accueil</h3>' +
+      (byPosition.home.length ? byPosition.home.map(([id, ad]) => adCardHtml(id, ad)).join('') : '<p class="sub" style="grid-column:1/-1">Aucun créneau programmé.</p>') +
+      '<h3 style="grid-column:1/-1;margin-top:18px">Espace 2 — Bandeaux marketplace</h3>' +
+      (byPosition.marketplace.length ? byPosition.marketplace.map(([id, ad]) => adCardHtml(id, ad)).join('') : '<p class="sub" style="grid-column:1/-1">Aucun créneau programmé.</p>');
+    feather.replace({ 'stroke-width':2 });
+  }
+
+  function toggleAd(id, makeActive){
+    if(!db) return;
+    db.ref('ads/' + id).update({ active: makeActive });
+  }
+  window.toggleAd = toggleAd;
+
+  function deleteAd(id){
+    if(!db) return;
+    if(!confirm('Supprimer cette publicité ?')) return;
+    db.ref('ads/' + id).remove();
+  }
+  window.deleteAd = deleteAd;
+
+  // Même compte Cloudinary que le reste de l'app (gratuit, pas de carte
+  // bancaire) — voir je-livre-prototype.html pour le contexte complet.
+  const CLOUDINARY_CLOUD_NAME = 'qfpmdhyj';
+  const CLOUDINARY_UPLOAD_PRESET = 'JE LIVRE';
+
+  function uploadAdImage(file){
+    if(!file) return Promise.resolve(null);
+    const form = new FormData();
+    form.append('file', file);
+    form.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    return fetch('https://api.cloudinary.com/v1_1/' + CLOUDINARY_CLOUD_NAME + '/auto/upload', { method: 'POST', body: form })
+      .then((res) => { if(!res.ok) throw new Error("Échec de l'envoi de l'image (" + res.status + ')'); return res.json(); })
+      .then((data) => data.secure_url);
+  }
+
+  function initAdForm(){
+    const slotSelect = document.getElementById('adFormSlot');
+    if(slotSelect && !slotSelect.dataset.filled){
+      slotSelect.dataset.filled = '1';
+      slotSelect.innerHTML = AD_SLOT_LABELS.map((label, i) => `<option value="${i + 1}">Créneau ${i + 1} — ${label}</option>`).join('');
+    }
+    const daysWrap = document.getElementById('adFormDays');
+    if(daysWrap && !daysWrap.dataset.filled){
+      daysWrap.dataset.filled = '1';
+      daysWrap.innerHTML = Object.entries(AD_DAY_LABELS).map(([code, label]) => `
+        <label style="display:flex;align-items:center;gap:5px;font-size:12.5px">
+          <input type="checkbox" class="adFormDayBox" value="${code}" checked> ${label}
+        </label>
+      `).join('');
+    }
+  }
+
+  function createAd(){
+    if(!db) return;
+    const title = (document.getElementById('adFormTitle').value || '').trim();
+    const text = (document.getElementById('adFormText').value || '').trim();
+    const link = (document.getElementById('adFormLink').value || '').trim();
+    const imageUrl = (document.getElementById('adFormImageUrl').value || '').trim();
+    const position = document.getElementById('adFormPosition').value;
+    const slot = parseInt(document.getElementById('adFormSlot').value, 10) || 1;
+    const checkedDays = Array.from(document.querySelectorAll('.adFormDayBox:checked')).map((c) => c.value);
+    const fileInput = document.getElementById('adFormImageFile');
+
+    function save(image){
+      const id = 'ad_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+      db.ref('ads/' + id).set({
+        title, text, link, image: image || '', position, slot,
+        days: checkedDays.length === 7 ? [] : checkedDays, // tableau vide = tous les jours
+        active: true,
+        createdAt: firebase.database.ServerValue.TIMESTAMP,
+      }).then(() => {
+        document.getElementById('adFormTitle').value = '';
+        document.getElementById('adFormText').value = '';
+        document.getElementById('adFormLink').value = '';
+        document.getElementById('adFormImageUrl').value = '';
+        fileInput.value = '';
+      }).catch((e) => alert('Erreur : ' + e.message));
+    }
+
+    if(fileInput.files && fileInput.files[0]){
+      uploadAdImage(fileInput.files[0]).then(save).catch((e) => alert('Erreur envoi image : ' + e.message));
+    } else {
+      save(imageUrl);
+    }
+  }
+  window.createAd = createAd;
+
+  if(db){
+    db.ref('ads').on('value', (snap) => {
+      allAds = snap.val() || {};
+      renderAds();
+    });
+  }
+
+  // ================= Connexion & rôles (Firebase Authentication) =================
+  const ROLE_LABELS = {
+    super_admin: 'Super admin', support: 'Service client', ads: 'Publicités',
+    registrations: 'Inscriptions', ops: 'Opérations',
+  };
+  const ROLE_PAGES = {
+    super_admin: ['overview','live','registrations','deliveries','support','ads','managers'],
+    support: ['overview','support'],
+    ads: ['overview','ads'],
+    registrations: ['overview','registrations'],
+    ops: ['overview','live','deliveries'],
+  };
+  let currentAdminUser = null;
+  let allManagers = {};
+  let isFirstSetup = false;
+  const auth = (typeof firebase !== 'undefined') ? firebase.auth() : null;
+
+  function applyRoleRestrictions(){
+    if(!currentAdminUser) return;
+    const roles = currentAdminUser.roles || [];
+    const allowedSet = new Set();
+    roles.forEach((r) => (ROLE_PAGES[r] || []).forEach((p) => allowedSet.add(p)));
+    const allowed = Array.from(allowedSet.size ? allowedSet : new Set(['overview']));
+    document.querySelectorAll('.nav-item').forEach((item) => {
+      const page = item.dataset.page;
+      item.style.display = allowed.includes(page) ? 'flex' : 'none';
+    });
+    const activeItem = document.querySelector('.nav-item.active');
+    if(activeItem && activeItem.style.display === 'none'){
+      switchAdminPage(allowed[0] || 'overview');
+    }
+    document.getElementById('sidebarUserInfo').innerHTML =
+      '<b style="color:#fff">' + currentAdminUser.name + '</b><br>' +
+      roles.map((r) => '<span class="role-badge ' + r + '" style="margin-top:5px;margin-right:3px;display:inline-block">' + (ROLE_LABELS[r] || r) + '</span>').join('');
+    document.getElementById('sidebarLogout').style.display = 'block';
+  }
+
+  function showLogin(hint){
+    document.getElementById('loginOverlay').style.display = 'flex';
+    document.getElementById('loginHint').textContent = hint || '';
+  }
+  function hideLogin(){
+    document.getElementById('loginOverlay').style.display = 'none';
+  }
+
+  function setLoginError(msg){
+    const el = document.getElementById('loginError');
+    el.textContent = msg;
+    el.style.display = msg ? 'block' : 'none';
+  }
+
+  const AUTH_ERROR_MESSAGES = {
+    'auth/invalid-email': "Adresse email invalide.",
+    'auth/user-not-found': "Aucun compte avec cet email.",
+    'auth/wrong-password': "Mot de passe incorrect.",
+    'auth/invalid-credential': "Email ou mot de passe incorrect.",
+    'auth/email-already-in-use': "Un compte existe déjà avec cet email.",
+    'auth/weak-password': "Le mot de passe doit contenir au moins 6 caractères.",
+  };
+
+  function adminLogin(){
+    if(!auth || !db){ setLoginError('Connexion à Firebase indisponible.'); return; }
+    setLoginError('');
+    const email = (document.getElementById('loginEmail').value || '').trim();
+    const password = document.getElementById('loginPassword').value || '';
+    const name = (document.getElementById('loginName').value || '').trim();
+
+    if(isFirstSetup){
+      if(!name){ setLoginError('Indique ton nom complet.'); return; }
+      auth.createUserWithEmailAndPassword(email, password).then((cred) => {
+        return cred.user.updateProfile({ displayName: name }).then(() => {
+          return db.ref('adminUsers/' + cred.user.uid).set({
+            name, email, roles: ['super_admin'], createdAt: firebase.database.ServerValue.TIMESTAMP,
+          });
+        });
+      }).catch((e) => setLoginError(AUTH_ERROR_MESSAGES[e.code] || e.message));
+    } else {
+      auth.signInWithEmailAndPassword(email, password).catch((e) => {
+        setLoginError(AUTH_ERROR_MESSAGES[e.code] || e.message);
+      });
+    }
+  }
+  window.adminLogin = adminLogin;
+
+  function adminLogout(){
+    if(auth) auth.signOut();
+  }
+  window.adminLogout = adminLogout;
+
+  function checkAdminAccess(user){
+    db.ref('adminUsers/' + user.uid).once('value').then((snap) => {
+      if(!snap.exists()){
+        setLoginError("Ce compte n'a pas de droits d'administration.");
+        auth.signOut();
+        return;
+      }
+      const data = snap.val();
+      currentAdminUser = { id: user.uid, name: data.name || user.displayName || user.email, email: user.email, roles: getManagerRoles(data) };
+      hideLogin();
+      applyRoleRestrictions();
+    });
+  }
+
+  function initAuth(){
+    if(!auth || !db){ showLogin('Connexion à Firebase indisponible.'); return; }
+    db.ref('adminUsers').once('value').then((snap) => {
+      isFirstSetup = !snap.exists();
+      if(isFirstSetup){
+        document.getElementById('loginTitle').textContent = 'Créer le compte Super Admin';
+        document.getElementById('loginSubtitle').textContent = "Premier accès : ce compte aura tous les droits d'administration.";
+        document.getElementById('loginName').style.display = 'block';
+        document.getElementById('loginSubmitBtn').textContent = 'Créer le compte';
+      }
+    });
+
+    auth.onAuthStateChanged((user) => {
+      if(user){ checkAdminAccess(user); }
+      else { currentAdminUser = null; showLogin(); }
+    });
+  }
+
+  // ================= Gestionnaires (super admin) =================
+  function getManagerRoles(m){
+    return m.roles && m.roles.length ? m.roles : (m.role ? [m.role] : ['support']);
+  }
+
+  function renderManagers(){
+    const tbody = document.getElementById('managersTableBody');
+    if(!tbody) return;
+    const entries = Object.entries(allManagers);
+    if(entries.length === 0){
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Aucun gestionnaire pour le moment.</td></tr>';
+      return;
+    }
+    entries.sort((a,b) => (b[1].createdAt||0) - (a[1].createdAt||0));
+    tbody.innerHTML = entries.map(([id, m]) => `
+      <tr>
+        <td><b>${escapeHtml(m.name || '—')}</b></td>
+        <td>${escapeHtml(m.email || m.username || '—')}</td>
+        <td>${getManagerRoles(m).map((r) => `<span class="role-badge ${r}" style="margin-right:4px">${ROLE_LABELS[r] || r}</span>`).join('')}</td>
+        <td>${timeAgo(m.createdAt)}</td>
+        <td style="text-align:right">
+          ${currentAdminUser && id !== currentAdminUser.id ? `<button class="btn btn-red btn-sm" onclick="deleteManager('${id}')">Retirer</button>` : ''}
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function limitRoleChecks(changedEl){
+    const boxes = document.querySelectorAll('#mgrRoleChecks input[type=checkbox]');
+    const checked = Array.from(boxes).filter((b) => b.checked);
+    if(checked.length >= 3){
+      boxes.forEach((b) => { if(!b.checked) b.disabled = true; });
+    } else {
+      boxes.forEach((b) => { b.disabled = false; });
+    }
+  }
+  window.limitRoleChecks = limitRoleChecks;
+
+  function createManager(){
+    if(!db){ alert('Connexion indisponible.'); return; }
+    const name = (document.getElementById('mgrFormName').value || '').trim();
+    const email = (document.getElementById('mgrFormEmail').value || '').trim();
+    const password = (document.getElementById('mgrFormPassword').value || '').trim();
+    const roles = Array.from(document.querySelectorAll('#mgrRoleChecks input:checked')).map((b) => b.value);
+    if(!name || !email || !password){ alert('Nom, email et mot de passe sont requis.'); return; }
+    if(password.length < 6){ alert('Le mot de passe doit contenir au moins 6 caractères.'); return; }
+    if(roles.length === 0){ alert('Sélectionne au moins un rôle (3 maximum).'); return; }
+
+    // On crée le compte via une instance Firebase secondaire pour ne pas
+    // déconnecter le super admin actuellement connecté (limitation du SDK
+    // client : créer un utilisateur y connecte automatiquement).
+    const secondaryApp = firebase.initializeApp(firebaseConfig, 'manager-creation-' + Date.now());
+    secondaryApp.auth().createUserWithEmailAndPassword(email, password).then((cred) => {
+      return cred.user.updateProfile({ displayName: name }).then(() => {
+        return db.ref('adminUsers/' + cred.user.uid).set({
+          name, email, roles, createdAt: firebase.database.ServerValue.TIMESTAMP,
+        });
+      }).then(() => secondaryApp.auth().signOut());
+    }).then(() => {
+      secondaryApp.delete();
+      document.getElementById('mgrFormName').value = '';
+      document.getElementById('mgrFormEmail').value = '';
+      document.getElementById('mgrFormPassword').value = '';
+      document.querySelectorAll('#mgrRoleChecks input').forEach((b) => { b.checked = false; b.disabled = false; });
+    }).catch((e) => {
+      secondaryApp.delete();
+      alert(AUTH_ERROR_MESSAGES[e.code] || e.message);
+    });
+  }
+  window.createManager = createManager;
+
+  function deleteManager(id){
+    if(!db) return;
+    if(!confirm("Retirer les droits d'administration de ce compte ? (Le compte de connexion Firebase devra être supprimé séparément depuis la console Firebase si besoin.)")) return;
+    db.ref('adminUsers/' + id).remove();
+  }
+  window.deleteManager = deleteManager;
+
+  if(db){
+    db.ref('adminUsers').on('value', (snap) => {
+      allManagers = snap.val() || {};
+      renderManagers();
+    });
+  }
+
+  // ================= Init =================
+  feather.replace({ 'stroke-width': 2 });
+  initMaps();
+  initAuth();
+</script>
+</body>
+</html>

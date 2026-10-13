@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Je Livre — Paiement (simulation)</title>
+<style>
+  *{ box-sizing:border-box; }
+  body{ margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+        background:#0D0D0C; font-family:-apple-system, 'Segoe UI', Roboto, sans-serif; color:#fff; }
+  .card{ width:100%; max-width:340px; text-align:center; }
+  .badge{ display:inline-block; background:#2A2412; color:#FFC629; font-size:11px; font-weight:700; padding:6px 12px; border-radius:999px; margin-bottom:18px; letter-spacing:.04em; }
+  h1{ font-size:24px; margin:0 0 6px; }
+  p{ color:#8A8880; font-size:13px; line-height:1.5; margin:0 0 22px; }
+  .amount{ font-size:38px; font-weight:800; color:#FFC629; margin-bottom:4px; }
+  .tx{ font-size:11px; color:#6E6C66; margin-bottom:26px; word-break:break-all; }
+  button{ width:100%; border:none; border-radius:999px; padding:15px; font-size:15px; font-weight:800; cursor:pointer; margin-bottom:10px; }
+  .ok{ background:#FFC629; color:#0D0D0C; }
+  .ko{ background:#1B1B19; color:#fff; border:1px solid #2C2C29; }
+  button:disabled{ opacity:.5; cursor:default; }
+  #msg{ min-height:18px; font-size:13px; margin-top:8px; color:#8A8880; }
+  #msg.err{ color:#FF6B6B; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="badge">SIMULATION — AUCUN ARGENT RÉEL</div>
+  <h1>Paiement de test</h1>
+  <p>Cette page remplace celle d'un prestataire de paiement pour tester le parcours complet de bout en bout.</p>
+  <div class="amount" id="amount">—</div>
+  <div class="tx" id="tx"></div>
+  <button class="ok" id="payBtn">Simuler un paiement réussi</button>
+  <button class="ko" id="failBtn">Simuler un échec</button>
+  <div id="msg"></div>
+</div>
+<script>
+  // Adresse de la fonction serveur "mockPay" (elle refuse d'agir dès qu'un vrai prestataire est configuré).
+  const MOCK_PAY_URL = 'https://europe-west1-je-livre-509fd.cloudfunctions.net/mockPay';
+
+  const params = new URLSearchParams(location.search);
+  const tx = params.get('tx') || '';
+  const amount = parseInt(params.get('amount'), 10);
+
+  // On ne renvoie le client que vers ce même site (pas de redirection vers une adresse quelconque).
+  let backTo = location.origin + '/';
+  try {
+    const u = new URL(params.get('return') || '/', location.origin);
+    if (u.origin === location.origin) backTo = u.href;
+  } catch (e) { /* adresse invalide : on garde l'accueil */ }
+
+  document.getElementById('amount').textContent = Number.isFinite(amount) ? amount.toLocaleString('fr-FR') + ' F' : '—';
+  document.getElementById('tx').textContent = tx ? 'Transaction ' + tx : 'Transaction inconnue';
+  const msg = document.getElementById('msg');
+  const buttons = [document.getElementById('payBtn'), document.getElementById('failBtn')];
+  if (!tx) buttons.forEach((b) => { b.disabled = true; });
+
+  async function run(result) {
+    buttons.forEach((b) => { b.disabled = true; });
+    msg.className = ''; msg.textContent = 'Traitement…';
+    try {
+      const r = await fetch(MOCK_PAY_URL + '?tx=' + encodeURIComponent(tx) + '&result=' + result, { method: 'POST' });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok || data.ok === false) throw new Error(data.error || data.reason || ('HTTP ' + r.status));
+      msg.textContent = 'Terminé. Retour à l\'application…';
+      setTimeout(() => { location.href = backTo; }, 900);
+    } catch (e) {
+      msg.className = 'err';
+      msg.textContent = 'La simulation a échoué : ' + e.message;
+      buttons.forEach((b) => { b.disabled = false; });
+    }
+  }
+  document.getElementById('payBtn').onclick = () => run('paid');
+  document.getElementById('failBtn').onclick = () => run('failed');
+</script>
+</body>
+</html>
