@@ -1781,7 +1781,7 @@
             <div class="veh-card" onclick="selectType(this)"><div class="ic"><i data-feather="truck"></i></div><b>Autre</b></div>
           </div>
         </div>
-        <p class="section-sub" style="margin-top:14px">Un compte livreur réel est créé, avec un mot de passe temporaire à communiquer. Le livreur devra confirmer son e-mail avant sa première connexion.</p>
+        <p class="section-sub" style="margin-top:14px">Un compte livreur réel est créé, avec un mot de passe temporaire à communiquer. Le livreur devra confirmer son numéro par SMS avant sa première connexion.</p>
         <div class="auth-error" id="newDriverError" style="text-align:left"></div>
         <button class="btn btn-yellow" style="margin-top:18px" onclick="createFleetDriver()">Générer les identifiants</button>
       </div>
@@ -1791,7 +1791,7 @@
         <div class="success-wrap" style="padding-top:26px">
           <div class="success-ring"><i data-feather="key"></i></div>
           <h2 style="font-size:23px">Identifiants créés</h2>
-          <p>Communiquez ces identifiants au livreur pour sa première connexion. Il devra aussi confirmer l'e-mail de vérification qu'il vient de recevoir.</p>
+          <p>Communiquez ces identifiants au livreur pour sa première connexion. Il devra aussi confirmer son numéro par SMS à ce moment-là.</p>
         </div>
         <div class="cred-card">
           <div class="cred-row"><span>Téléphone</span><b id="credId">—</b></div>
@@ -4405,7 +4405,7 @@
     const d = fleetDriversCache[uid];
     if(!d) return;
     document.getElementById('detailName').textContent = d.name || '—';
-    document.getElementById('detailId').textContent = (d.email || uid) + ' · ' + (d.vehicle || '—');
+    document.getElementById('detailId').textContent = (d.phone || uid) + ' · ' + (d.vehicle || '—');
     document.getElementById('detailPhone').value = d.phone || '';
     document.getElementById('detailStatus').textContent = d.online ? 'En ligne' : 'Hors ligne';
     document.getElementById('detailDot').style.background = d.online ? '#3EAF4C' : '#B9B7B0';
