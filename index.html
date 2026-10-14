@@ -1996,21 +1996,25 @@
     databaseURL: "https://je-livre-509fd-default-rtdb.europe-west1.firebasedatabase.app",
   };
 
+  // ---- Serveur (paiement + vérification SMS), hébergé sur Vercel ----
+  // Adresse de votre déploiement Vercel — à remplacer par la vraie une fois
+  // déployé (visible dans le tableau de bord Vercel, ex. "je-livre-server.vercel.app").
+  const SERVER_BASE_URL = 'https://je-livre-server.vercel.app';
+
   // ---- Paiement en ligne ----
-  // Tant que le serveur de paiement (dossier functions/) n'est pas déployé et relié à
-  // un prestataire, laissez enabled à false : l'option "Payer maintenant" reste grisée.
-  // Ne le passez à true qu'APRÈS avoir déployé les fonctions.
-  const PAYMENTS = { enabled: false, region: 'europe-west1' };
+  // Tant que le serveur de paiement n'est pas déployé et relié à un
+  // prestataire, laissez enabled à false : l'option "Payer maintenant" reste
+  // grisée. Ne le passez à true qu'APRÈS avoir déployé le serveur.
+  const PAYMENTS = { enabled: false };
   if (typeof firebase !== 'undefined' && !firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
   }
   // ================= Connexion / inscription (Firebase Authentication) =================
   // On utilise Firebase Authentication (email + mot de passe) avec un email
-  // \synthétique\ dérivé du numéro de téléphone (ex. 22670000000@jelivre.internal).
+  // "synthétique" dérivé du numéro de téléphone (ex. 22670000000@jelivre.internal).
   // Ça donne un vrai compte sécurisé par Firebase (mot de passe jamais stocké
-  // en clair) sans dépendre de l'envoi de SMS, qui reste payant. La case
-  // érification\ (inscription / mot de passe oublié) est simulée pour
-  // l'instant : n'importe quel code à 6 chiffres est accepté, donc zéro coût.
+  // en clair). La vérification (inscription / mot de passe oublié) passe par
+  // un vrai code envoyé par SMS — voir smsCallable ci-dessous.
   const appAuth = firebase.auth();
   window.currentAppUser = null; // { uid, name, phone }
   let pendingAuthPhone = null;
@@ -2024,8 +2028,33 @@
   // rôle appelle ces fonctions serveur depuis SA PROPRE instance Firebase
   // (pour que la vérification finale — claimVerification — s'applique bien
   // à SON compte, celui qui vient d'être créé).
-  const SMS_REGION = 'europe-west1';
-  function smsCallable(app, name){ return app.functions(SMS_REGION).httpsCallable(name); }
+  // Appelle une fonction serveur (SMS ou paiement) hébergée sur Vercel. "app" est
+  // l'instance Firebase Auth du rôle concerné (appAuth / driverAuth / vendorAuth /
+  // entrepriseAuth) : si son utilisateur est connecté, son jeton d'identité est
+  // transmis pour que le serveur sache qui appelle (ex. claimVerification).
+  // Renvoie {data} comme le faisait httpsCallable, pour ne rien changer aux
+  // nombreux appels existants ailleurs dans ce fichier.
+  function serverCallable(app, name){
+    return async (data) => {
+      const headers = { 'Content-Type': 'application/json' };
+      const user = app && app.currentUser;
+      if(user){
+        try { headers['Authorization'] = 'Bearer ' + (await user.getIdToken()); }
+        catch(e){ /* tant pis : le serveur traitera l'appel comme non connecté */ }
+      }
+      let res;
+      try {
+        res = await fetch(SERVER_BASE_URL + '/api/' + name, { method: 'POST', headers, body: JSON.stringify(data || {}) });
+      } catch(e){
+        throw Object.assign(new Error('Impossible de joindre le serveur.'), { code: 'unavailable' });
+      }
+      const body = await res.json().catch(() => ({}));
+      if(!res.ok){
+        throw Object.assign(new Error(body.message || 'Erreur.'), { code: body.code || 'internal' });
+      }
+      return { data: body };
+    };
+  }
 
   // Même numéro, compte différent selon le rôle (une personne peut être
   // cliente ET livreur) : doit correspondre EXACTEMENT au mappage du
@@ -2036,10 +2065,10 @@
 
   function friendlyOtpError(e){
     const code = e && e.code ? String(e.code) : '';
-    if(code === 'functions/unavailable' || code === 'functions/deadline-exceeded'){
+    if(code === 'unavailable'){
       return 'Impossible de joindre le service de vérification. Vérifiez votre connexion et réessayez.';
     }
-    if(!e || !e.message || code === 'functions/internal' || code === 'functions/unknown'){
+    if(!e || !e.message || code === 'internal'){
       return 'Le service de vérification est momentanément indisponible. Réessayez dans un instant.';
     }
     return e.message; // messages du serveur, déjà rédigés pour la personne (ex. « Code incorrect, 3 tentatives restantes »)
@@ -2230,7 +2259,7 @@
     setAuthError('');
     const btn = document.querySelector('#authStepPhone .auth-submit');
     if(btn) btn.disabled = true;
-    smsCallable(appAuth.app, 'requestOtp')({ phone, role: 'client', purpose: authFlow === 'signup' ? 'signup' : 'reset' })
+    serverCallable(appAuth, 'requestOtp')({ phone, role: 'client', purpose: authFlow === 'signup' ? 'signup' : 'reset' })
       .then(() => {
         pendingAuthPhone = phone;
         document.getElementById('authCodeInput').value = '';
@@ -2245,7 +2274,7 @@
 
   function authResendCode(){
     setAuthError('');
-    smsCallable(appAuth.app, 'requestOtp')({ phone: pendingAuthPhone, role: 'client', purpose: authFlow === 'signup' ? 'signup' : 'reset' })
+    serverCallable(appAuth, 'requestOtp')({ phone: pendingAuthPhone, role: 'client', purpose: authFlow === 'signup' ? 'signup' : 'reset' })
       .then(() => setAuthError('Code renvoyé.'))
       .catch((e) => setAuthError(friendlyOtpError(e)));
   }
@@ -2257,7 +2286,7 @@
     setAuthError('');
     const btn = document.querySelector('#authStepCode .auth-submit');
     if(btn) btn.disabled = true;
-    smsCallable(appAuth.app, 'verifyOtp')({ phone: pendingAuthPhone, code })
+    serverCallable(appAuth, 'verifyOtp')({ phone: pendingAuthPhone, code })
       .then(() => {
         document.getElementById('authStepCode').style.display = 'none';
         if(authFlow === 'signup'){
@@ -2314,7 +2343,7 @@
             // Pose l'attribut "téléphone vérifié" sur le compte qui vient d'être créé, à
             // partir de la preuve laissée par verifyOtp. N'empêche pas l'inscription si ça
             // échoue (compte déjà créé) : juste pas d'attribut, à revérifier plus tard.
-            smsCallable(appAuth.app, 'claimVerification')({ phone: pendingAuthPhone, role: 'client' }).catch(() => {}),
+            serverCallable(appAuth, 'claimVerification')({ phone: pendingAuthPhone, role: 'client' }).catch(() => {}),
           ])
         );
       });
@@ -2336,7 +2365,7 @@
     // Le changement lui-même se fait côté serveur (SDK Admin) à partir de la preuve
     // laissée par verifyOtp : aucune session existante n'est nécessaire, c'est tout
     // le principe du mot de passe oublié.
-    smsCallable(appAuth.app, 'resetPassword')({ phone: pendingAuthPhone, role: 'client', newPassword: password })
+    serverCallable(appAuth, 'resetPassword')({ phone: pendingAuthPhone, role: 'client', newPassword: password })
       .then(() => appAuth.signInWithEmailAndPassword(phoneToEmail(pendingAuthPhone), password))
       .catch((e) => { setAuthError(friendlyOtpError(e)); if(btn) btn.disabled = false; });
   }
@@ -2556,7 +2585,7 @@
     if(password.length < 6){ setRegShopStep1Error('Le mot de passe doit contenir au moins 6 caractères.'); return; }
     if(password !== confirm){ setRegShopStep1Error('Les mots de passe ne correspondent pas.'); return; }
     setRegShopStep1Error('');
-    smsCallable(vendorApp, 'requestOtp')({ phone, role: 'vendor', purpose: 'signup' }).then(() => {
+    serverCallable(vendorAuth, 'requestOtp')({ phone, role: 'vendor', purpose: 'signup' }).then(() => {
       pendingVendorPhone = phone;
       vendorOtpVerified = false;
       document.getElementById('regShopOtpInput').value = '';
@@ -2573,7 +2602,7 @@
     vendorOtpVerified = false;
     const errEl = document.getElementById('regShopOtpError');
     errEl.textContent = '';
-    smsCallable(vendorApp, 'requestOtp')({ phone: pendingVendorPhone, role: 'vendor', purpose: 'signup' })
+    serverCallable(vendorAuth, 'requestOtp')({ phone: pendingVendorPhone, role: 'vendor', purpose: 'signup' })
       .then(() => { errEl.textContent = 'Code renvoyé.'; })
       .catch((e) => { errEl.textContent = friendlyOtpError(e); });
   }
@@ -2585,7 +2614,7 @@
     const createAccount = () => {
       vendorAuth.createUserWithEmailAndPassword(roleEmail(pendingVendorPhone, 'vendor'), password).then((cred) => {
         pendingVendorSignup = { uid: cred.user.uid, phone: pendingVendorPhone };
-        return smsCallable(vendorApp, 'claimVerification')({ phone: pendingVendorPhone, role: 'vendor' });
+        return serverCallable(vendorAuth, 'claimVerification')({ phone: pendingVendorPhone, role: 'vendor' });
       }).then(() => {
         document.getElementById('regShopOtpStep').style.display = 'none';
         document.getElementById('regShopDetailsStep').style.display = 'block';
@@ -2598,7 +2627,7 @@
     const code = (document.getElementById('regShopOtpInput').value || '').trim();
     if(code.length !== 6){ errEl.textContent = 'Entrez le code à 6 chiffres reçu par SMS.'; return; }
     errEl.textContent = '';
-    smsCallable(vendorApp, 'verifyOtp')({ phone: pendingVendorPhone, code }).then(() => {
+    serverCallable(vendorAuth, 'verifyOtp')({ phone: pendingVendorPhone, code }).then(() => {
       vendorOtpVerified = true;
       createAccount();
     }).catch((e) => { errEl.textContent = friendlyOtpError(e); });
@@ -2716,7 +2745,7 @@
   window.vendorLoginSubmit = vendorLoginSubmit;
 
   function resendVendorPendingOtp(){
-    smsCallable(vendorApp, 'requestOtp')({ phone: pendingVendorPhone, role: 'vendor', purpose: 'signup' })
+    serverCallable(vendorAuth, 'requestOtp')({ phone: pendingVendorPhone, role: 'vendor', purpose: 'signup' })
       .then(() => {
         document.getElementById('vendorAuthPendingCodeBox').style.display = 'block';
         document.getElementById('vendorAuthPendingBtn').style.display = 'none';
@@ -2730,8 +2759,8 @@
     if(code.length !== 6){ setVendorAuthError('Entrez le code à 6 chiffres reçu par SMS.'); return; }
     const user = vendorAuth.currentUser;
     if(!user){ setVendorAuthError('Session expirée, reconnectez-vous.'); return; }
-    smsCallable(vendorApp, 'verifyOtp')({ phone: pendingVendorPhone, code })
-      .then(() => smsCallable(vendorApp, 'claimVerification')({ phone: pendingVendorPhone, role: 'vendor' }))
+    serverCallable(vendorAuth, 'verifyOtp')({ phone: pendingVendorPhone, code })
+      .then(() => serverCallable(vendorAuth, 'claimVerification')({ phone: pendingVendorPhone, role: 'vendor' }))
       .then(() => { closeVendorLogin(); openVendorLogin(); vendorLoginSubmit(); })
       .catch((e) => setVendorAuthError(friendlyOtpError(e)));
   }
@@ -2755,7 +2784,7 @@
     const phone = (document.getElementById('vendorResetPhone').value || '').trim();
     if(phoneDigits(phone).length < 8){ setVendorAuthError('Entrez un numéro de téléphone valide.'); return; }
     setVendorAuthError('');
-    smsCallable(vendorApp, 'requestOtp')({ phone, role: 'vendor', purpose: 'reset' }).then(() => {
+    serverCallable(vendorAuth, 'requestOtp')({ phone, role: 'vendor', purpose: 'reset' }).then(() => {
       pendingVendorResetPhone = phone;
       document.getElementById('vendorResetPhoneRecap').textContent = phone;
       document.getElementById('vendorResetCodeInput').value = '';
@@ -2769,7 +2798,7 @@
     const code = (document.getElementById('vendorResetCodeInput').value || '').trim();
     if(code.length !== 6){ setVendorAuthError('Entrez le code à 6 chiffres reçu par SMS.'); return; }
     setVendorAuthError('');
-    smsCallable(vendorApp, 'verifyOtp')({ phone: pendingVendorResetPhone, code }).then(() => {
+    serverCallable(vendorAuth, 'verifyOtp')({ phone: pendingVendorResetPhone, code }).then(() => {
       document.getElementById('vendorResetStep2').style.display = 'none';
       document.getElementById('vendorResetStep3').style.display = 'block';
     }).catch((e) => setVendorAuthError(friendlyOtpError(e)));
@@ -2782,7 +2811,7 @@
     if(password.length < 6){ setVendorAuthError('Le mot de passe doit contenir au moins 6 caractères.'); return; }
     if(password !== confirm){ setVendorAuthError('Les mots de passe ne correspondent pas.'); return; }
     setVendorAuthError('');
-    smsCallable(vendorApp, 'resetPassword')({ phone: pendingVendorResetPhone, role: 'vendor', newPassword: password }).then(() => {
+    serverCallable(vendorAuth, 'resetPassword')({ phone: pendingVendorResetPhone, role: 'vendor', newPassword: password }).then(() => {
       closeVendorLogin();
       alert('Mot de passe changé. Connectez-vous avec votre nouveau mot de passe.');
       openVendorLogin();
@@ -2857,7 +2886,7 @@
     if(password.length < 6){ setRegEntStep1Error('Le mot de passe doit contenir au moins 6 caractères.'); return; }
     if(password !== confirm){ setRegEntStep1Error('Les mots de passe ne correspondent pas.'); return; }
     setRegEntStep1Error('');
-    smsCallable(entrepriseApp, 'requestOtp')({ phone, role: 'enterprise', purpose: 'signup' }).then(() => {
+    serverCallable(entrepriseAuth, 'requestOtp')({ phone, role: 'enterprise', purpose: 'signup' }).then(() => {
       pendingEntreprisePhone = phone;
       entrepriseOtpVerified = false;
       document.getElementById('regEntOtpInput').value = '';
@@ -2874,7 +2903,7 @@
     entrepriseOtpVerified = false;
     const errEl = document.getElementById('regEntOtpError');
     errEl.textContent = '';
-    smsCallable(entrepriseApp, 'requestOtp')({ phone: pendingEntreprisePhone, role: 'enterprise', purpose: 'signup' })
+    serverCallable(entrepriseAuth, 'requestOtp')({ phone: pendingEntreprisePhone, role: 'enterprise', purpose: 'signup' })
       .then(() => { errEl.textContent = 'Code renvoyé.'; })
       .catch((e) => { errEl.textContent = friendlyOtpError(e); });
   }
@@ -2886,7 +2915,7 @@
     const createAccount = () => {
       entrepriseAuth.createUserWithEmailAndPassword(roleEmail(pendingEntreprisePhone, 'enterprise'), password).then((cred) => {
         pendingEntrepriseSignup = { uid: cred.user.uid, phone: pendingEntreprisePhone };
-        return smsCallable(entrepriseApp, 'claimVerification')({ phone: pendingEntreprisePhone, role: 'enterprise' });
+        return serverCallable(entrepriseAuth, 'claimVerification')({ phone: pendingEntreprisePhone, role: 'enterprise' });
       }).then(() => {
         document.getElementById('regEntOtpStep').style.display = 'none';
         document.getElementById('regEntDetailsStep').style.display = 'block';
@@ -2899,7 +2928,7 @@
     const code = (document.getElementById('regEntOtpInput').value || '').trim();
     if(code.length !== 6){ errEl.textContent = 'Entrez le code à 6 chiffres reçu par SMS.'; return; }
     errEl.textContent = '';
-    smsCallable(entrepriseApp, 'verifyOtp')({ phone: pendingEntreprisePhone, code }).then(() => {
+    serverCallable(entrepriseAuth, 'verifyOtp')({ phone: pendingEntreprisePhone, code }).then(() => {
       entrepriseOtpVerified = true;
       createAccount();
     }).catch((e) => { errEl.textContent = friendlyOtpError(e); });
@@ -2994,7 +3023,7 @@
   window.entrepriseLoginSubmit = entrepriseLoginSubmit;
 
   function resendEntreprisePendingOtp(){
-    smsCallable(entrepriseApp, 'requestOtp')({ phone: pendingEntreprisePhone, role: 'enterprise', purpose: 'signup' })
+    serverCallable(entrepriseAuth, 'requestOtp')({ phone: pendingEntreprisePhone, role: 'enterprise', purpose: 'signup' })
       .then(() => {
         document.getElementById('entAuthPendingCodeBox').style.display = 'block';
         document.getElementById('entAuthPendingBtn').style.display = 'none';
@@ -3008,8 +3037,8 @@
     if(code.length !== 6){ setEntAuthError('Entrez le code à 6 chiffres reçu par SMS.'); return; }
     const user = entrepriseAuth.currentUser;
     if(!user){ setEntAuthError('Session expirée, reconnectez-vous.'); return; }
-    smsCallable(entrepriseApp, 'verifyOtp')({ phone: pendingEntreprisePhone, code })
-      .then(() => smsCallable(entrepriseApp, 'claimVerification')({ phone: pendingEntreprisePhone, role: 'enterprise' }))
+    serverCallable(entrepriseAuth, 'verifyOtp')({ phone: pendingEntreprisePhone, code })
+      .then(() => serverCallable(entrepriseAuth, 'claimVerification')({ phone: pendingEntreprisePhone, role: 'enterprise' }))
       .then(() => { closeEntrepriseLogin(); openEntrepriseLogin(); entrepriseLoginSubmit(); })
       .catch((e) => setEntAuthError(friendlyOtpError(e)));
   }
@@ -3033,7 +3062,7 @@
     const phone = (document.getElementById('entResetPhone').value || '').trim();
     if(phoneDigits(phone).length < 8){ setEntAuthError('Entrez un numéro de téléphone valide.'); return; }
     setEntAuthError('');
-    smsCallable(entrepriseApp, 'requestOtp')({ phone, role: 'enterprise', purpose: 'reset' }).then(() => {
+    serverCallable(entrepriseAuth, 'requestOtp')({ phone, role: 'enterprise', purpose: 'reset' }).then(() => {
       pendingEntrepriseResetPhone = phone;
       document.getElementById('entResetPhoneRecap').textContent = phone;
       document.getElementById('entResetCodeInput').value = '';
@@ -3047,7 +3076,7 @@
     const code = (document.getElementById('entResetCodeInput').value || '').trim();
     if(code.length !== 6){ setEntAuthError('Entrez le code à 6 chiffres reçu par SMS.'); return; }
     setEntAuthError('');
-    smsCallable(entrepriseApp, 'verifyOtp')({ phone: pendingEntrepriseResetPhone, code }).then(() => {
+    serverCallable(entrepriseAuth, 'verifyOtp')({ phone: pendingEntrepriseResetPhone, code }).then(() => {
       document.getElementById('entResetStep2').style.display = 'none';
       document.getElementById('entResetStep3').style.display = 'block';
     }).catch((e) => setEntAuthError(friendlyOtpError(e)));
@@ -3060,7 +3089,7 @@
     if(password.length < 6){ setEntAuthError('Le mot de passe doit contenir au moins 6 caractères.'); return; }
     if(password !== confirm){ setEntAuthError('Les mots de passe ne correspondent pas.'); return; }
     setEntAuthError('');
-    smsCallable(entrepriseApp, 'resetPassword')({ phone: pendingEntrepriseResetPhone, role: 'enterprise', newPassword: password }).then(() => {
+    serverCallable(entrepriseAuth, 'resetPassword')({ phone: pendingEntrepriseResetPhone, role: 'enterprise', newPassword: password }).then(() => {
       closeEntrepriseLogin();
       alert('Mot de passe changé. Connectez-vous avec votre nouveau mot de passe.');
       openEntrepriseLogin();
@@ -3139,7 +3168,7 @@
     if(password.length < 6){ setRegStep1Error('Le mot de passe doit contenir au moins 6 caractères.'); return; }
     if(password !== confirm){ setRegStep1Error('Les mots de passe ne correspondent pas.'); return; }
     setRegStep1Error('');
-    smsCallable(driverApp, 'requestOtp')({ phone, role: 'driver', purpose: 'signup' }).then(() => {
+    serverCallable(driverAuth, 'requestOtp')({ phone, role: 'driver', purpose: 'signup' }).then(() => {
       pendingDriverPhone = phone;
       driverOtpVerified = false;
       document.getElementById('regDriverOtpInput').value = '';
@@ -3156,7 +3185,7 @@
     driverOtpVerified = false;
     const errEl = document.getElementById('regDriverOtpError');
     errEl.textContent = '';
-    smsCallable(driverApp, 'requestOtp')({ phone: pendingDriverPhone, role: 'driver', purpose: 'signup' })
+    serverCallable(driverAuth, 'requestOtp')({ phone: pendingDriverPhone, role: 'driver', purpose: 'signup' })
       .then(() => { errEl.textContent = 'Code renvoyé.'; })
       .catch((e) => { errEl.textContent = friendlyOtpError(e); });
   }
@@ -3171,7 +3200,7 @@
     const createAccount = () => {
       driverAuth.createUserWithEmailAndPassword(roleEmail(pendingDriverPhone, 'driver'), password).then((cred) => {
         pendingDriverSignup = { uid: cred.user.uid, phone: pendingDriverPhone };
-        return smsCallable(driverApp, 'claimVerification')({ phone: pendingDriverPhone, role: 'driver' });
+        return serverCallable(driverAuth, 'claimVerification')({ phone: pendingDriverPhone, role: 'driver' });
       }).then(() => {
         document.getElementById('regDriverOtpStep').style.display = 'none';
         document.getElementById('regDriverDetailsStep').style.display = 'block';
@@ -3184,7 +3213,7 @@
     const code = (document.getElementById('regDriverOtpInput').value || '').trim();
     if(code.length !== 6){ errEl.textContent = 'Entrez le code à 6 chiffres reçu par SMS.'; return; }
     errEl.textContent = '';
-    smsCallable(driverApp, 'verifyOtp')({ phone: pendingDriverPhone, code }).then(() => {
+    serverCallable(driverAuth, 'verifyOtp')({ phone: pendingDriverPhone, code }).then(() => {
       driverOtpVerified = true;
       createAccount();
     }).catch((e) => { errEl.textContent = friendlyOtpError(e); });
@@ -3291,7 +3320,7 @@
   // l'inscription, avant d'avoir entré le code) peut redemander et saisir son
   // code sans reprendre l'inscription depuis le début.
   function resendDriverPendingOtp(){
-    smsCallable(driverApp, 'requestOtp')({ phone: pendingDriverPhone, role: 'driver', purpose: 'signup' })
+    serverCallable(driverAuth, 'requestOtp')({ phone: pendingDriverPhone, role: 'driver', purpose: 'signup' })
       .then(() => {
         document.getElementById('driverAuthPendingCodeBox').style.display = 'block';
         document.getElementById('driverAuthPendingBtn').style.display = 'none';
@@ -3305,8 +3334,8 @@
     if(code.length !== 6){ setDriverAuthError('Entrez le code à 6 chiffres reçu par SMS.'); return; }
     const user = driverAuth.currentUser;
     if(!user){ setDriverAuthError('Session expirée, reconnectez-vous.'); return; }
-    smsCallable(driverApp, 'verifyOtp')({ phone: pendingDriverPhone, code })
-      .then(() => smsCallable(driverApp, 'claimVerification')({ phone: pendingDriverPhone, role: 'driver' }))
+    serverCallable(driverAuth, 'verifyOtp')({ phone: pendingDriverPhone, code })
+      .then(() => serverCallable(driverAuth, 'claimVerification')({ phone: pendingDriverPhone, role: 'driver' }))
       .then(() => { closeDriverLogin(); openDriverLogin(); driverLoginSubmit(); }) // relance la connexion, maintenant vérifiée
       .catch((e) => setDriverAuthError(friendlyOtpError(e)));
   }
@@ -3330,7 +3359,7 @@
     const phone = (document.getElementById('driverResetPhone').value || '').trim();
     if(phoneDigits(phone).length < 8){ setDriverAuthError('Entrez un numéro de téléphone valide.'); return; }
     setDriverAuthError('');
-    smsCallable(driverApp, 'requestOtp')({ phone, role: 'driver', purpose: 'reset' }).then(() => {
+    serverCallable(driverAuth, 'requestOtp')({ phone, role: 'driver', purpose: 'reset' }).then(() => {
       pendingDriverResetPhone = phone;
       document.getElementById('driverResetPhoneRecap').textContent = phone;
       document.getElementById('driverResetCodeInput').value = '';
@@ -3344,7 +3373,7 @@
     const code = (document.getElementById('driverResetCodeInput').value || '').trim();
     if(code.length !== 6){ setDriverAuthError('Entrez le code à 6 chiffres reçu par SMS.'); return; }
     setDriverAuthError('');
-    smsCallable(driverApp, 'verifyOtp')({ phone: pendingDriverResetPhone, code }).then(() => {
+    serverCallable(driverAuth, 'verifyOtp')({ phone: pendingDriverResetPhone, code }).then(() => {
       document.getElementById('driverResetStep2').style.display = 'none';
       document.getElementById('driverResetStep3').style.display = 'block';
     }).catch((e) => setDriverAuthError(friendlyOtpError(e)));
@@ -3357,7 +3386,7 @@
     if(password.length < 6){ setDriverAuthError('Le mot de passe doit contenir au moins 6 caractères.'); return; }
     if(password !== confirm){ setDriverAuthError('Les mots de passe ne correspondent pas.'); return; }
     setDriverAuthError('');
-    smsCallable(driverApp, 'resetPassword')({ phone: pendingDriverResetPhone, role: 'driver', newPassword: password }).then(() => {
+    serverCallable(driverAuth, 'resetPassword')({ phone: pendingDriverResetPhone, role: 'driver', newPassword: password }).then(() => {
       closeDriverLogin();
       alert('Mot de passe changé. Connectez-vous avec votre nouveau mot de passe.');
       openDriverLogin();
@@ -5481,10 +5510,10 @@
 
   function friendlyPaymentError(e){
     const code = e && e.code ? String(e.code) : '';
-    if(code === 'functions/unavailable' || code === 'functions/deadline-exceeded'){
+    if(code === 'unavailable'){
       return 'Impossible de joindre le service de paiement. Vérifiez votre connexion et réessayez.';
     }
-    if(code === 'functions/internal' || code === 'functions/unknown' || code === 'functions/not-found' || !e || !e.message){
+    if(code === 'internal' || code === 'not-found' || !e || !e.message){
       return 'Le paiement en ligne est momentanément indisponible. Réessayez dans un instant, ou choisissez le paiement à la livraison.';
     }
     return e.message; // messages du serveur, déjà rédigés pour le client (ex. « Veuillez patienter... »)
@@ -5493,14 +5522,9 @@
   // Renvoie true si le client a bien été envoyé vers la page de paiement.
   async function startOnlinePayment(orderIds){
     if(!PAYMENTS.enabled){ alert('Le paiement en ligne n\'est pas encore disponible.'); return false; }
-    if(typeof firebase === 'undefined' || typeof firebase.app().functions !== 'function'){
-      alert('Le paiement en ligne est momentanément indisponible. Réessayez dans un instant.');
-      return false;
-    }
     showPayOverlay('Préparation du paiement…', 'Ne fermez pas cette page.', false);
     try {
-      const call = firebase.app().functions(PAYMENTS.region).httpsCallable('createPayment');
-      const res = await call({ orderIds });
+      const res = await serverCallable(appAuth, 'createPayment')({ orderIds });
       const data = res && res.data ? res.data : {};
       if(!data.paymentUrl) throw new Error('no-url');
       try { sessionStorage.setItem('je_livre_pending_tx', data.txId); } catch(e){ /* ignoré */ }
