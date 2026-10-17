@@ -2020,7 +2020,14 @@
   let pendingAuthPhone = null;
   let authFlow = null; // 'signup' | 'reset'
 
-  function phoneDigits(raw){ return (raw || '').replace(/\D/g, ''); }
+  function phoneDigits(raw){
+    let d = (raw || '').replace(/\D/g, '');
+    // Numéro burkinabè saisi sans l'indicatif (8 chiffres, ex. 74375897) :
+    // on ajoute 226 automatiquement, pour que ça marche même si la personne
+    // ne le tape pas elle-même.
+    if (d.length === 8 && !d.startsWith('226')) d = '226' + d;
+    return d;
+  }
   function phoneToEmail(raw){ return phoneDigits(raw) + '@jelivre.internal'; }
 
   // ================= Vérification du téléphone par SMS (OTP) =================
