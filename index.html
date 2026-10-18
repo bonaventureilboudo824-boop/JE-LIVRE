@@ -1199,6 +1199,14 @@
           </div>
           <div class="recap-price"><span>Prix estimé</span><b id="recapPrice">1 000 FCFA</b></div>
         </div>
+        <div class="field" style="margin-top:16px">
+          <label>Mode de paiement</label>
+          <div class="type-grid" id="deliveryPaymentMethodGrid" style="margin-top:8px">
+            <div class="type-card sel" data-value="cash" onclick="selectDeliveryPaymentMethod(this)"><div class="ic"><i data-feather="truck"></i></div><b>À la livraison</b></div>
+            <div class="type-card" id="deliveryPayOnlineCard" data-value="online" onclick="selectDeliveryPaymentMethod(this)"><div class="ic"><i data-feather="smartphone"></i></div><b>Payer maintenant</b></div>
+          </div>
+          <span style="font-size:11.5px;color:var(--text-soft);margin-top:6px;display:block" id="deliveryPaymentMethodHint">Vous payez en espèces ou en Mobile Money directement au livreur, à la réception.</span>
+        </div>
         <button class="btn btn-yellow" style="margin-top:18px" onclick="confirmDelivery()">Confirmer la livraison</button>
       </div>
 
@@ -3922,6 +3930,12 @@
     const senderPhone = isExpress ? getVal('expPhoneInput') : isGroupee ? getVal('groupPhoneInput') : getVal('senderPhoneInput');
     const senderAddress = isExpress ? getVal('expAddrInput') : isGroupee ? getVal('groupAddrInput') : getVal('senderAddrInput');
 
+    // Le paiement en ligne n'existe que pour "Livraison simple" (Express et
+    // Groupée se paient toujours à la livraison).
+    const paySel = type === 'simple' ? document.querySelector('#deliveryPaymentMethodGrid .sel') : null;
+    const wantsOnline = !!(paySel && paySel.dataset.value === 'online' && PAYMENTS.enabled);
+    const paymentMethod = type === 'simple' ? (wantsOnline ? 'online' : 'cash') : null;
+
     try {
       if (typeof firebase !== 'undefined') {
         await firebase.database().ref('deliveryRequests/' + requestId).set({
@@ -3934,13 +3948,26 @@
           senderAddress,
           recipientPhone: getVal('recipientPhoneInput'),
           recipientAddress: getVal('recipientAddrInput'),
-          status: 'pending',
+          status: wantsOnline ? 'awaiting_payment' : 'pending',
+          paymentMethod,
+          paymentStatus: paymentMethod === 'online' ? 'pending' : null,
           assignedDriverId: null,
           clientUid: firebase.auth().currentUser ? firebase.auth().currentUser.uid : null,
           referredBy: window.currentAppUser ? (window.currentAppUser.referredBy || null) : null,
           referredAt: window.currentAppUser ? (window.currentAppUser.referredAt || null) : null,
           createdAt: firebase.database.ServerValue.TIMESTAMP,
         });
+        if(wantsOnline){
+          // On garde de quoi réafficher le suivi après le passage par la page
+          // de paiement (qui recharge entièrement la page, donc perd l'état
+          // en mémoire window.currentDelivery).
+          try { sessionStorage.setItem('je_livre_pending_delivery', JSON.stringify(window.currentDelivery)); } catch(e){ /* ignoré */ }
+          await startDeliveryOnlinePayment(requestId);
+          // Succès ou échec, startDeliveryOnlinePayment a déjà géré la suite
+          // (redirection vers le paiement, ou message d'erreur). On s'arrête ici :
+          // la demande reste invisible des livreurs tant qu'elle n'est pas payée.
+          return;
+        }
         listenForDeliveryAssignment(requestId);
       }
     } catch (e) {
@@ -5534,7 +5561,10 @@
       const res = await serverCallable(appAuth, 'createPayment')({ orderIds });
       const data = res && res.data ? res.data : {};
       if(!data.paymentUrl) throw new Error('no-url');
-      try { sessionStorage.setItem('je_livre_pending_tx', data.txId); } catch(e){ /* ignoré */ }
+      try {
+        sessionStorage.setItem('je_livre_pending_tx', data.txId);
+        sessionStorage.setItem('je_livre_pending_tx_kind', 'marketplace');
+      } catch(e){ /* ignoré */ }
       showPayOverlay('Redirection…', 'Vous allez être redirigé vers la page de paiement sécurisée.', false);
       window.location.href = data.paymentUrl;
       return true;
@@ -5550,32 +5580,71 @@
   function payOrderOnline(orderId){ startOnlinePayment([orderId]); }
   window.payOrderOnline = payOrderOnline;
 
+  // Même principe que startOnlinePayment, pour une demande de livraison
+  // simple (point à point) au lieu d'une ou plusieurs commandes boutique.
+  async function startDeliveryOnlinePayment(requestId){
+    if(!PAYMENTS.enabled){ alert('Le paiement en ligne n\'est pas encore disponible.'); return false; }
+    showPayOverlay('Préparation du paiement…', 'Ne fermez pas cette page.', false);
+    try {
+      const res = await serverCallable(appAuth, 'createPayment')({ deliveryRequestId: requestId });
+      const data = res && res.data ? res.data : {};
+      if(!data.paymentUrl) throw new Error('no-url');
+      try {
+        sessionStorage.setItem('je_livre_pending_tx', data.txId);
+        sessionStorage.setItem('je_livre_pending_tx_kind', 'delivery');
+      } catch(e){ /* ignoré */ }
+      showPayOverlay('Redirection…', 'Vous allez être redirigé vers la page de paiement sécurisée.', false);
+      window.location.href = data.paymentUrl;
+      return true;
+    } catch(e){
+      closePayOverlay();
+      alert(friendlyPaymentError(e));
+      return false;
+    }
+  }
+  window.startDeliveryOnlinePayment = startDeliveryOnlinePayment;
+
   // Au retour de la page de paiement (?payment=return&tx=...) : on n'accorde AUCUNE
   // confiance à l'adresse de retour ; on attend que le serveur ait enregistré le
   // résultat (le prestataire le lui envoie en parallèle), puis on l'affiche.
   function handlePaymentReturn(txId){
     if(!txId || typeof firebase === 'undefined') return;
+    let kind = 'marketplace';
+    try { kind = sessionStorage.getItem('je_livre_pending_tx_kind') || 'marketplace'; } catch(e){ /* ignoré */ }
+    const isDelivery = kind === 'delivery';
     showPayOverlay('Vérification du paiement…', 'Nous attendons la confirmation de votre paiement.', false);
     const ref = firebase.database().ref('payments/' + txId);
     let done = false, timer = null;
     const toOrders = () => { switchTab('profile'); go('my-orders'); };
+    const toDeliveryTracking = () => {
+      // La page de paiement a entièrement rechargé le site : on restaure l'état
+      // du suivi en mémoire à partir de ce qu'on avait gardé avant de partir.
+      try {
+        const saved = sessionStorage.getItem('je_livre_pending_delivery');
+        if(saved) window.currentDelivery = JSON.parse(saved);
+      } catch(e){ /* ignoré */ }
+      if(window.currentDelivery && window.currentDelivery.requestId) listenForDeliveryAssignment(window.currentDelivery.requestId);
+      switchTab('livraison'); go('suivi');
+    };
+    const after = isDelivery ? toDeliveryTracking : toOrders;
+    const retryHint = isDelivery ? 'Vous pouvez réessayer depuis « Mes livraisons ».' : 'Vous pouvez réessayer depuis « Mes commandes ».';
     function finish(title, msg){
       if(done) return; done = true;
       clearTimeout(timer); ref.off('value', onValue);
-      payOverlayAfterClose = toOrders;
+      payOverlayAfterClose = after;
       showPayOverlay(title, msg, true);
     }
     function onValue(snap){
       const p = snap.val();
       if(!p) return;
-      if(p.status === 'paid') finish('Paiement confirmé', 'Votre commande a été transmise à la boutique.');
-      else if(p.status === 'paid_needs_review') finish('Paiement reçu', 'Nous avons bien reçu votre paiement, mais votre commande demande une vérification. Le service client vous contactera.');
-      else if(p.status === 'amount_mismatch') finish('Paiement à vérifier', 'Le montant reçu ne correspond pas à votre commande. Le service client va examiner votre paiement.');
-      else if(p.status === 'failed' || p.status === 'failed_to_create') finish('Paiement non abouti', 'Le paiement n\'a pas abouti. Vous pouvez réessayer depuis « Mes commandes ».');
+      if(p.status === 'paid') finish('Paiement confirmé', isDelivery ? 'Votre livraison est en cours de recherche d\'un livreur.' : 'Votre commande a été transmise à la boutique.');
+      else if(p.status === 'paid_needs_review') finish('Paiement reçu', 'Nous avons bien reçu votre paiement, mais ' + (isDelivery ? 'votre livraison' : 'votre commande') + ' demande une vérification. Le service client vous contactera.');
+      else if(p.status === 'amount_mismatch') finish('Paiement à vérifier', 'Le montant reçu ne correspond pas à votre ' + (isDelivery ? 'demande' : 'commande') + '. Le service client va examiner votre paiement.');
+      else if(p.status === 'failed' || p.status === 'failed_to_create') finish('Paiement non abouti', 'Le paiement n\'a pas abouti. ' + retryHint);
     }
     timer = setTimeout(() => finish('Paiement en cours de vérification',
-      'Nous n\'avons pas encore reçu la confirmation. Consultez « Mes commandes » dans quelques instants : votre commande sera débloquée automatiquement dès que le paiement sera confirmé.'), 90000);
-    ref.on('value', onValue, () => finish('Paiement en cours de vérification', 'Consultez « Mes commandes » dans quelques instants pour suivre votre paiement.'));
+      'Nous n\'avons pas encore reçu la confirmation. ' + retryHint + ' Elle sera débloquée automatiquement dès que le paiement sera confirmé.'), 90000);
+    ref.on('value', onValue, () => finish('Paiement en cours de vérification', retryHint));
   }
   window.handlePaymentReturn = handlePaymentReturn;
 
@@ -6553,10 +6622,26 @@
   }
   window.selectPaymentMethod = selectPaymentMethod;
 
+  // Même principe que selectPaymentMethod, pour l'écran "Livraison simple"
+  // (identifiants différents, pour ne pas interférer avec le panier boutique).
+  function selectDeliveryPaymentMethod(el){
+    if(el.dataset.value === 'online' && !PAYMENTS.enabled) return;
+    selectType(el);
+    const hint = document.getElementById('deliveryPaymentMethodHint');
+    if(hint){
+      hint.textContent = el.dataset.value === 'online'
+        ? 'Paiement Mobile Money sécurisé. Le montant affiché ci-dessus est celui facturé.'
+        : 'Vous payez en espèces ou en Mobile Money directement au livreur, à la réception.';
+    }
+  }
+  window.selectDeliveryPaymentMethod = selectDeliveryPaymentMethod;
+
   // Grise l'option "Payer maintenant" tant que PAYMENTS.enabled est false.
-  function applyPaymentAvailability(){
-    const card = document.getElementById('payOnlineCard');
-    const cash = document.querySelector('#paymentMethodGrid [data-value="cash"]');
+  // (cardId/gridSelector : généralisé pour s'appliquer aussi bien au panier
+  // boutique qu'à l'écran "Livraison simple".)
+  function applyPaymentAvailabilityFor(cardId, gridSelector){
+    const card = document.getElementById(cardId);
+    const cash = document.querySelector(gridSelector + ' [data-value="cash"]');
     if(!card) return;
     const label = card.querySelector('b');
     if(PAYMENTS.enabled){
@@ -6568,6 +6653,10 @@
       if(cash) cash.classList.add('sel');
       if(label) label.innerHTML = 'Payer maintenant<br><span style="font-weight:500;font-size:11px">Bientôt disponible</span>';
     }
+  }
+  function applyPaymentAvailability(){
+    applyPaymentAvailabilityFor('payOnlineCard', '#paymentMethodGrid');
+    applyPaymentAvailabilityFor('deliveryPayOnlineCard', '#deliveryPaymentMethodGrid');
   }
 
   window.myDeliveriesCache = {};
