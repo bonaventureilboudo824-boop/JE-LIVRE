@@ -2005,7 +2005,7 @@
   // Tant que le serveur de paiement n'est pas déployé et relié à un
   // prestataire, laissez enabled à false : l'option "Payer maintenant" reste
   // grisée. Ne le passez à true qu'APRÈS avoir déployé le serveur.
-  const PAYMENTS = { enabled: false };
+  const PAYMENTS = { enabled: true };
   if (typeof firebase !== 'undefined' && !firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
   }
