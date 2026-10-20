@@ -1355,10 +1355,10 @@
         <div class="field">
           <label>Mode de paiement</label>
           <div class="type-grid" id="paymentMethodGrid" style="margin-top:8px">
-            <div class="type-card sel" data-value="cash" onclick="selectPaymentMethod(this)"><div class="ic"><i data-feather="truck"></i></div><b>À la livraison</b></div>
+            <div class="type-card sel" data-value="pay_on_delivery" onclick="selectPaymentMethod(this)"><div class="ic"><i data-feather="truck"></i></div><b>À la livraison</b></div>
             <div class="type-card" id="payOnlineCard" data-value="online" onclick="selectPaymentMethod(this)"><div class="ic"><i data-feather="smartphone"></i></div><b>Payer maintenant</b></div>
           </div>
-          <span style="font-size:11.5px;color:var(--text-soft);margin-top:6px;display:block" id="paymentMethodHint">Vous payez en espèces ou en Mobile Money directement au livreur, à la réception.</span>
+          <span style="font-size:11.5px;color:var(--text-soft);margin-top:6px;display:block" id="paymentMethodHint">Paiement Mobile Money à la remise : vous réglerez depuis votre téléphone quand le livreur arrivera. Aucune espèce ne change de main.</span>
         </div>
         <div id="checkoutSummaryWrap" style="margin-top:16px"></div>
       </div>
@@ -1729,6 +1729,15 @@
           <a class="btn btn-outline" id="courseMsgBtn" href="#" target="_blank" rel="noopener" style="text-decoration:none"><i data-feather="message-circle" style="width:15px;height:15px"></i>Message</a>
         </div>
         <button class="btn btn-yellow" style="margin-top:18px" id="courseBtn" onclick="advanceCourse()">Marquer comme récupéré</button>
+      </div>
+
+      <!-- ATTENTE DU PAIEMENT DU CLIENT (livreur, commande boutique payée à la remise) -->
+      <div class="screen" id="screen-course-waiting-payment" data-title="En attente du paiement">
+        <div class="pending-wrap">
+          <div class="pending-ring"><i data-feather="smartphone"></i></div>
+          <h2>En attente du paiement du client</h2>
+          <p>Le client doit régler cette commande sur son téléphone, depuis « Mes commandes ». Restez avec lui : la page se débloque automatiquement dès que c'est payé.</p>
+        </div>
       </div>
 
       <!-- LIVRAISON TERMINÉE (livreur) -->
@@ -5489,7 +5498,7 @@
     if(!phone || !window.checkoutCoords){ alert('Numéro de téléphone et position requis.'); return; }
 
     const paymentEl = document.querySelector('#paymentMethodGrid .type-card.sel');
-    const paymentMethod = paymentEl ? paymentEl.dataset.value : 'cash';
+    const paymentMethod = paymentEl ? paymentEl.dataset.value : 'pay_on_delivery';
     if(paymentMethod === 'online' && !PAYMENTS.enabled){
       alert('Le paiement en ligne n\'est pas encore disponible. Choisissez « À la livraison ».');
       return;
@@ -6052,8 +6061,8 @@
     const pending = Object.entries(all).filter(([id, o]) => o && o.status === 'pending_delivery' && !window.dismissedRequests.has(id));
     if(pending.length === 0){ el.innerHTML = ''; return; }
     el.innerHTML = pending.map(([id, o]) => {
-      const cashNote = (o.paymentMethod === 'cash' && o.paymentStatus !== 'paid')
-        ? `<div class="meta" style="color:#B3261E;font-weight:700">À encaisser à la remise : ${formatFCFA(o.total)}</div>`
+      const cashNote = (o.paymentMethod === 'pay_on_delivery' && o.paymentStatus !== 'paid')
+        ? `<div class="meta" style="color:#B3261E;font-weight:700">Paiement en ligne à la remise — aucune espèce à récupérer</div>`
         : `<div class="meta" style="color:#3EAF4C;font-weight:700">Déjà payée en ligne — rien à encaisser</div>`;
       return `
       <div class="req-card">
@@ -6116,7 +6125,7 @@
       const shop = (typeof shopsByKey !== 'undefined') ? shopsByKey[o.shopId] : null;
       const pickup = (shop && shop.lat != null && shop.lng != null) ? { lat: shop.lat, lng: shop.lng } : o.clientCoords;
       const dropoff = (shop && shop.lat != null && shop.lng != null) ? o.clientCoords : null;
-      window.currentCourse = { orderId, source: 'marketplaceOrders', clientCoords: pickup, dropoffCoords: dropoff, price: o.deliveryFee || 0, recipientPhone: o.clientPhone || '', cashToCollect: (o.paymentMethod === 'cash' && o.paymentStatus !== 'paid') ? (o.total || 0) : 0 };
+      window.currentCourse = { orderId, source: 'marketplaceOrders', clientCoords: pickup, dropoffCoords: dropoff, price: o.deliveryFee || 0, recipientPhone: o.clientPhone || '', paymentMethod: o.paymentMethod || 'pay_on_delivery' };
       courseStep = 0;
       const nameEl = document.getElementById('courseClientName');
       const metaEl = document.getElementById('courseClientMeta');
@@ -6126,9 +6135,9 @@
       if(nameEl) nameEl.textContent = 'Client · ' + o.clientPhone;
       if(metaEl) metaEl.textContent = o.items.map((it) => it.qty + '×' + it.name).join(', ') + ' · ' + o.shopName;
       if(cashEl){
-        if(window.currentCourse.cashToCollect > 0){
+        if(o.paymentMethod === 'pay_on_delivery' && o.paymentStatus !== 'paid'){
           cashEl.style.display = 'block';
-          cashEl.textContent = 'À encaisser auprès du client à la remise : ' + formatFCFA(window.currentCourse.cashToCollect);
+          cashEl.textContent = 'Paiement en ligne à la remise : le client paiera sur son téléphone pendant que vous attendez — aucune espèce à récupérer.';
         } else {
           cashEl.style.display = 'none';
         }
@@ -6670,7 +6679,7 @@
     if(hint){
       hint.textContent = el.dataset.value === 'online'
         ? 'Paiement Mobile Money sécurisé. Votre commande n\'est envoyée à la boutique qu\'une fois le paiement confirmé ; le vendeur n\'est crédité qu\'après la livraison.'
-        : 'Vous payez en espèces ou en Mobile Money directement au livreur, à la réception.';
+        : 'Paiement Mobile Money à la remise : vous réglerez depuis votre téléphone quand le livreur arrivera. Aucune espèce ne change de main.';
     }
   }
   window.selectPaymentMethod = selectPaymentMethod;
@@ -6694,7 +6703,7 @@
   // boutique qu'à l'écran "Livraison simple".)
   function applyPaymentAvailabilityFor(cardId, gridSelector){
     const card = document.getElementById(cardId);
-    const cash = document.querySelector(gridSelector + ' [data-value="cash"]');
+    const cash = document.querySelector(gridSelector + ' [data-value]:not([data-value="online"])');
     if(!card) return;
     const label = card.querySelector('b');
     if(PAYMENTS.enabled){
@@ -6902,13 +6911,13 @@
       return ref.update({ status: 'completed', receivedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
         if(cached.shopReferredBy) creditReferralReward(cached.shopReferredBy, cached.shopReferredAt);
         recordPlatformCommission('commissionSimple', (cached.deliveryFee || 0) * 0.10);
-        if(cached.assignedDriverId && cached.paymentMethod === 'cash' && cached.subtotal > 0){
-          const remId = 'rem_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-          firebase.database().ref('remittances/' + remId).set({
-            driverId: cached.assignedDriverId, driverName: cached.assignedDriverName || '',
-            orderId, shopId: cached.shopId, shopName: cached.shopName || 'Boutique',
-            amount: cached.subtotal, status: 'owed',
-            createdAt: firebase.database.ServerValue.TIMESTAMP,
+        // Cette fonction n'est plus atteinte que par les commandes payées
+        // D'AVANCE en ligne (celles payées à la remise se terminent via le
+        // paiement lui-même, voir beginAwaitingClientPayment) : le livreur n'a
+        // donc jamais rien encaissé ici — on lui crédite ses frais de livraison.
+        if(cached.assignedDriverId && (cached.deliveryFee || 0) > 0){
+          firebase.database().ref('drivers/' + cached.assignedDriverId).update({
+            earningsBalance: firebase.database.ServerValue.increment(cached.deliveryFee),
           });
         }
         renderMyOrders();
@@ -7015,12 +7024,47 @@
     const msgEl = document.getElementById('courseDoneMessage');
     const earnEl = document.getElementById('courseDoneEarning');
     if(msgEl){
-      msgEl.textContent = c && c.source === 'marketplaceOrders'
+      msgEl.textContent = (c && c.source === 'marketplaceOrders' && c.paymentMethod === 'pay_on_delivery')
+        ? 'Paiement confirmé — commande terminée.'
+        : c && c.source === 'marketplaceOrders'
         ? 'La commande a bien été remise au client, en attente de sa confirmation.'
         : 'Le colis ' + ((c && c.trackId) || '') + ' a bien été remis au destinataire.';
     }
     if(earnEl) earnEl.textContent = '+ ' + formatFCFA((c && c.price) || 0);
     go('course-done');
+  }
+
+  // Commande boutique payée à la remise : au lieu de clore directement, on
+  // bascule la commande en attente de paiement et on attend — en direct —
+  // que le client règle depuis son propre téléphone ("Mes commandes") avant
+  // de laisser le livreur repartir. Le serveur (settlePayment) a déjà posé
+  // tous les effets (crédit du livreur, parrainage, commission) au moment où
+  // le paiement est confirmé : on ne fait ici qu'attendre et afficher.
+  function beginAwaitingClientPayment(){
+    const c = window.currentCourse;
+    if(!c || !c.orderId || typeof firebase === 'undefined') return;
+    driverDb.ref('marketplaceOrders/' + c.orderId).update({ status: 'awaiting_payment' })
+      .catch((e) => console.warn('[Je Livre] Passage en attente de paiement impossible :', e.message));
+    go('course-waiting-payment');
+    const ref = driverDb.ref('marketplaceOrders/' + c.orderId);
+    const onValue = (snap) => {
+      const o = snap.val();
+      if(o && o.status === 'completed'){
+        ref.off('value', onValue);
+        showCourseDone();
+      }
+    };
+    ref.on('value', onValue);
+  }
+
+  function finishCourseStep(){
+    const c = window.currentCourse;
+    if(c && c.source === 'marketplaceOrders' && c.paymentMethod === 'pay_on_delivery'){
+      beginAwaitingClientPayment();
+    } else {
+      completeCurrentCourse();
+      showCourseDone();
+    }
   }
 
   function advanceCourse(){
@@ -7030,10 +7074,9 @@
       const hasDropoff = window.currentCourse && window.currentCourse.dropoffCoords;
       btn.textContent = 'Marquer comme livré';
       updateCourseContactButtons();
-      if(hasDropoff){ renderCourseMap(); } else { completeCurrentCourse(); showCourseDone(); }
+      if(hasDropoff){ renderCourseMap(); } else { finishCourseStep(); }
     } else {
-      completeCurrentCourse();
-      showCourseDone();
+      finishCourseStep();
     }
   }
 
