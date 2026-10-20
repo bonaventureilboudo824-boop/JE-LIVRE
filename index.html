@@ -1685,9 +1685,14 @@
         <div class="link-row" style="margin-top:4px"><a onclick="go('driver-notifications')">Notifications</a> · <a onclick="driverLogout()">Se déconnecter de l'espace livreur</a></div>
         <div id="commissionBanner" style="display:none;margin-top:14px;background:#FBEAEA;border:1px solid #F3C6C6;border-radius:var(--radius-md);padding:14px">
           <b style="color:#B3261E">Commission due : <span id="commissionAmount">0 F</span></b>
-          <p class="section-sub" style="margin-top:4px">100 F par colis livré en Express/Groupée. Réglez-la pour pouvoir accepter une nouvelle course.</p>
+          <p class="section-sub" style="margin-top:4px">100 F par colis en Express/Groupée, 10 % du prix en Livraison simple payée cash. Réglez-la pour pouvoir accepter une nouvelle course.</p>
           <button class="btn btn-black" style="margin-top:8px;padding:10px" onclick="payCommission()">J'ai payé ma commission</button>
         </div>
+        <div class="stat-row" style="margin-top:14px">
+          <div class="stat-card" style="flex:1"><span>Solde disponible</span><b id="driverEarningsBalance">0 F</b></div>
+        </div>
+        <button class="btn btn-outline" style="margin-top:10px" onclick="requestDriverWithdrawal()">Demander un retrait</button>
+        <p class="section-sub" style="margin-top:6px">Crédité automatiquement pour chaque livraison payée en ligne (le client a déjà réglé la plateforme, vous n'avez rien encaissé).</p>
         <div id="remittanceSection" style="display:none;margin-top:14px">
           <h2 class="section-title" style="font-size:17px">À reverser aux boutiques</h2>
           <p class="section-sub">Encaissé à la livraison pour le compte du vendeur — à leur reverser.</p>
@@ -3525,6 +3530,48 @@
     }).catch(() => { countEl.textContent = '0'; earnEl.textContent = formatFCFA(0); });
   }
 
+  function loadDriverEarningsBalance(){
+    const balEl = document.getElementById('driverEarningsBalance');
+    if(!window.currentDriverUser || !balEl || typeof firebase === 'undefined') return;
+    driverDb.ref('drivers/' + window.currentDriverUser.uid + '/earningsBalance').once('value').then((snap) => {
+      balEl.textContent = formatFCFA(snap.val() || 0);
+    }).catch(() => {});
+  }
+
+  // Même principe que requestReferralWithdrawal / requestWithdrawal (boutique) :
+  // une demande que l'équipe (admin) traite ensuite. Pour les livreurs,
+  // "traiter" déclenche un vrai virement Mobile Money via HorusPay — mais ça
+  // reste toujours un admin qui l'approuve, jamais automatique.
+  function requestDriverWithdrawal(){
+    if(!window.currentDriverUser) return;
+    driverDb.ref('drivers/' + window.currentDriverUser.uid + '/earningsBalance').once('value').then((snap) => {
+      const available = snap.val() || 0;
+      if(available <= 0){ alert('Aucun solde disponible pour le moment.'); return; }
+      const amountStr = prompt('Montant à retirer (FCFA) — solde disponible : ' + formatFCFA(available), String(available));
+      if(!amountStr) return;
+      const amount = parseInt(amountStr, 10);
+      if(!amount || amount <= 0 || amount > available){ alert('Montant invalide.'); return; }
+      if(amount < 100){ alert('Le montant minimum pour un retrait est de 100 F.'); return; }
+      const networkChoice = prompt('Réseau Mobile Money : tapez "orange" pour Orange Money, ou "moov" pour Moov Money.', 'orange');
+      if(!networkChoice) return;
+      const network = /moov/i.test(networkChoice) ? 'moov_bf' : 'orange_bf_direct';
+      const phone = prompt('Numéro Mobile Money pour recevoir ce retrait :', window.currentDriverUser.phone || '');
+      if(!phone) return;
+      const withdrawalId = 'w_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      driverDb.ref('withdrawalRequests/' + withdrawalId).set({
+        kind: 'driver',
+        driverId: window.currentDriverUser.uid,
+        amount, phone, network,
+        status: 'pending',
+        requestedAt: firebase.database.ServerValue.TIMESTAMP,
+      }).then(() => {
+        alert('Demande de retrait envoyée. Elle sera traitée par notre équipe sous peu.');
+        loadDriverEarningsBalance();
+      }).catch((e) => alert('Erreur : ' + e.message));
+    });
+  }
+  window.requestDriverWithdrawal = requestDriverWithdrawal;
+
   // ---- Géo-utilitaires (mêmes fonctions que la démo de suivi) ----
   function toRad(deg) { return (deg * Math.PI) / 180; }
   function haversineDistanceKm(lat1, lng1, lat2, lng2) {
@@ -4317,7 +4364,7 @@
           if(dot) dot.style.background = window.driverAvailable ? '#3EAF4C' : '#B9B7B0';
         }
       }
-      listenMarketplaceRequests(); listenDeliveryRequests(); loadDriverStats(); renderCommissionBanner(); loadDriverRemittances();
+      listenMarketplaceRequests(); listenDeliveryRequests(); loadDriverStats(); renderCommissionBanner(); loadDriverRemittances(); loadDriverEarningsBalance();
     }
     if (current === 'course-active') { renderCourseMap(); }
     if (current === 'dashboard-entreprise') { listenFleet(); renderFleet(); renderFleetMap(); }
@@ -5962,7 +6009,7 @@
         return;
       }
       const r = result.snapshot.val();
-      window.currentCourse = { requestId: id, trackId: r.trackId, clientCoords: r.senderCoords, dropoffCoords: r.recipientCoords || null, source: 'deliveryRequests', price: r.price || 0, senderPhone: r.senderPhone || '', recipientPhone: r.recipientPhone || '', referredBy: r.referredBy || null, referredAt: r.referredAt || null, deliveryType: r.type || 'simple', packageCount: r.packageCount || 1 };
+      window.currentCourse = { requestId: id, trackId: r.trackId, clientCoords: r.senderCoords, dropoffCoords: r.recipientCoords || null, source: 'deliveryRequests', price: r.price || 0, senderPhone: r.senderPhone || '', recipientPhone: r.recipientPhone || '', referredBy: r.referredBy || null, referredAt: r.referredAt || null, deliveryType: r.type || 'simple', packageCount: r.packageCount || 1, paymentMethod: r.paymentMethod || 'cash' };
       courseStep = 0;
       const nameEl = document.getElementById('courseClientName');
       const metaEl = document.getElementById('courseClientMeta');
@@ -6708,10 +6755,28 @@
       const all = Object.entries(snap.val() || {});
       window.myDeliveriesCache = Object.fromEntries(all);
       all.sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
-      const ongoing = all.filter(([, r]) => r.status === 'pending' || r.status === 'assigned');
+      const ongoing = all.filter(([, r]) => r.status === 'pending' || r.status === 'assigned' || r.status === 'awaiting_payment');
       const done = all.filter(([, r]) => r.status === 'completed');
 
-      coursEl.innerHTML = ongoing.length === 0 ? '<p class="section-sub">Aucune livraison en cours.</p>' : ongoing.map(([id, r]) => `
+      coursEl.innerHTML = ongoing.length === 0 ? '<p class="section-sub">Aucune livraison en cours.</p>' : ongoing.map(([id, r]) => {
+        if(r.status === 'awaiting_payment'){
+          // Le paiement n'a pas abouti (page fermée, échec…) : la demande
+          // reste invisible des livreurs tant qu'elle n'est pas réglée — on
+          // laisse le client réessayer ici plutôt que de la perdre.
+          return `
+            <div class="order-card">
+              <div class="top"><span class="id">${escapeHtml(r.trackId)}</span><span class="status-chip" style="background:#FBEAEA;color:#B3261E">Paiement en attente</span></div>
+              <div class="route-line"><span>${escapeHtml(r.senderAddress || 'Expéditeur')}</span><div class="dash"></div><span>${escapeHtml(r.recipientAddress || 'Destinataire')}</span></div>
+              <div class="eta">
+                <span>${formatFCFA(r.price)}</span>
+                ${PAYMENTS.enabled
+                  ? `<button class="track-btn" onclick="startDeliveryOnlinePayment('${id}')">Payer maintenant</button>`
+                  : '<span style="font-size:12px;color:var(--text-soft)">Paiement momentanément indisponible</span>'}
+              </div>
+            </div>
+          `;
+        }
+        return `
         <div class="order-card">
           <div class="top"><span class="id">${escapeHtml(r.trackId)}</span><span class="status-chip route">${r.status === 'assigned' ? 'En route' : 'Recherche livreur'}</span></div>
           <div class="route-line"><span>${escapeHtml(r.senderAddress || 'Expéditeur')}</span><div class="dash"></div><span>${escapeHtml(r.recipientAddress || 'Destinataire')}</span></div>
@@ -6720,7 +6785,8 @@
             <button class="track-btn" onclick="trackMyDelivery('${id}')">Suivre</button>
           </div>
         </div>
-      `).join('');
+      `;
+      }).join('');
 
       histEl.innerHTML = done.length === 0 ? '<p class="section-sub">Aucune livraison terminée pour le moment.</p>' : done.map(([, r]) => `
         <div class="hist-row">
@@ -6895,8 +6961,34 @@
     if(c.source === 'deliveryRequests'){
       driverDb.ref('deliveryRequests/' + c.requestId).update({ status: 'completed', completedAt: firebase.database.ServerValue.TIMESTAMP });
       if(c.referredBy) creditReferralReward(c.referredBy, c.referredAt);
-      if(c.deliveryType !== 'express' && c.deliveryType !== 'groupee'){
+      const isSimple = c.deliveryType !== 'express' && c.deliveryType !== 'groupee';
+      if(isSimple){
         recordPlatformCommission('commissionSimple', (c.price || 0) * 0.10);
+      }
+      if(isSimple && c.paymentMethod === 'cash' && window.currentDriverUser){
+        // Livraison simple payée cash : le livreur encaisse tout lui-même, il
+        // doit donc 10 % à la plateforme avant d'accepter une autre course
+        // (même mécanisme que pour Express/Groupée, juste calculé en %).
+        const owed = Math.round((c.price || 0) * 0.10);
+        if(owed > 0){
+          window.currentDriverUser.pendingCommission = (window.currentDriverUser.pendingCommission || 0) + owed;
+          driverDb.ref('drivers/' + window.currentDriverUser.uid).update({
+            pendingCommission: firebase.database.ServerValue.increment(owed),
+          });
+          renderCommissionBanner();
+        }
+      }
+      if(isSimple && c.paymentMethod === 'online' && window.currentDriverUser){
+        // Livraison simple payée en ligne : le client a déjà payé la
+        // plateforme directement, le livreur n'a rien encaissé — on lui
+        // crédite sa part (90 % du prix, la plateforme garde les mêmes 10 %
+        // que pour le cash) sur son solde de gains, retirable ensuite.
+        const earned = Math.round((c.price || 0) * 0.90);
+        if(earned > 0){
+          driverDb.ref('drivers/' + window.currentDriverUser.uid).update({
+            earningsBalance: firebase.database.ServerValue.increment(earned),
+          }).then(loadDriverEarningsBalance);
+        }
       }
       if((c.deliveryType === 'express' || c.deliveryType === 'groupee') && window.currentDriverUser){
         // 100 F de commission par colis, à régler avant d'accepter la
