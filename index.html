@@ -3888,12 +3888,14 @@
     const senderPoint = window.senderCoords || { lat: OUAGA_CENTER[0], lng: OUAGA_CENTER[1] };
     const recipientPoint = window.recipientCoords || null;
 
-    // Le prix se base sur la distance de livraison (expéditeur → destinataire) quand elle
-    // est connue (flux Simple) ; sinon une estimation par défaut (Express / Groupée).
-    const priceDistanceKm = recipientPoint
-      ? window.GeoUtils.haversineDistanceKm(senderPoint.lat, senderPoint.lng, recipientPoint.lat, recipientPoint.lng)
-      : (window.simpleDeliveryEstimate ? window.simpleDeliveryEstimate.distanceKm : 3);
-    let price = calculatePrice(priceDistanceKm);
+    // Le prix reprend EXACTEMENT celui déjà affiché sur l'écran précédent
+    // (même formule, mêmes coordonnées) — jamais recalculé séparément, pour
+    // qu'il ne puisse plus jamais différer de ce qui a été montré à la
+    // personne juste avant qu'elle ne confirme.
+    const priceDistanceKm = window.simpleDeliveryEstimate
+      ? window.simpleDeliveryEstimate.distanceKm
+      : (recipientPoint ? window.GeoUtils.haversineDistanceKm(senderPoint.lat, senderPoint.lng, recipientPoint.lat, recipientPoint.lng) * 1.3 : 3);
+    let price = window.simpleDeliveryEstimate ? window.simpleDeliveryEstimate.price : calculatePrice(priceDistanceKm);
     const packageCount = isGroupee ? count : 1;
     if(isGroupee && packageCount > 1){
       price *= packageCount; // chaque colis au tarif plein, aucun rabais — seule la commission diffère
@@ -4176,7 +4178,15 @@
     }
 
     const a = window.senderCoords, b = window.recipientCoords;
-    let distanceKm, durationMin, coords;
+    // La distance affichée et le prix se basent TOUJOURS sur la même formule
+    // simple (ligne droite × 1,3), la seule que le serveur peut reproduire de
+    // façon fiable pour fixer un prix définitif lors d'un paiement en ligne.
+    // L'itinéraire réel (OSRM) ne sert plus qu'à dessiner une jolie route sur
+    // la carte — jamais à calculer le prix, pour qu'il ne puisse plus jamais
+    // différer de ce qui s'affichera à la confirmation et au paiement.
+    const distanceKm = window.GeoUtils.haversineDistanceKm(a.lat, a.lng, b.lat, b.lng) * 1.3;
+    const durationMin = window.GeoUtils.estimateEtaMinutes(distanceKm, 'Moto');
+    let coords = [[a.lat, a.lng], [b.lat, b.lng]];
     try {
       const url = `https://router.project-osrm.org/route/v1/driving/${a.lng},${a.lat};${b.lng},${b.lat}?overview=full&geometries=geojson`;
       const controller = new AbortController();
@@ -4185,13 +4195,9 @@
       clearTimeout(timeoutId);
       const data = await res.json();
       if(!data.routes || !data.routes[0]) throw new Error('Pas de trajet');
-      distanceKm = data.routes[0].distance / 1000;
-      durationMin = Math.round(data.routes[0].duration / 60);
       coords = data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
     } catch(e){
-      distanceKm = window.GeoUtils.haversineDistanceKm(a.lat, a.lng, b.lat, b.lng) * 1.3;
-      durationMin = window.GeoUtils.estimateEtaMinutes(distanceKm, 'Moto');
-      coords = [[a.lat, a.lng], [b.lat, b.lng]];
+      // Pas de route dessinable : la ligne droite suffit, la distance/le prix restent corrects.
     }
 
     const price = calculatePrice(distanceKm);
