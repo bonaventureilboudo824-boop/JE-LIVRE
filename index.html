@@ -1279,6 +1279,21 @@
         <div class="reels-feed" id="reelsFeed"></div>
       </div>
 
+      <!-- Commentaires d'un Reel (fenêtre, indépendante du système d'écrans) -->
+      <div id="reelCommentsOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:flex-end;justify-content:center" onclick="if(event.target===this) closeReelComments()">
+        <div style="background:var(--card,#fff);width:100%;max-width:480px;max-height:70vh;border-radius:20px 20px 0 0;display:flex;flex-direction:column;padding:16px 16px 12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <b style="font-size:15px">Commentaires</b>
+            <button onclick="closeReelComments()" style="background:none;border:none;padding:4px"><i data-feather="x"></i></button>
+          </div>
+          <div id="reelCommentsList" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:12px;min-height:60px"></div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <input id="reelCommentInput" type="text" placeholder="Ajouter un commentaire…" maxlength="300" style="flex:1;border:1px solid var(--border);border-radius:999px;padding:10px 14px;font-size:14px">
+            <button class="btn btn-yellow" style="padding:10px 16px;white-space:nowrap" onclick="postReelComment()">Envoyer</button>
+          </div>
+        </div>
+      </div>
+
       <!-- PRODUIT -->
       <div class="screen" id="screen-product" data-title="Produit">
         <div class="product-hero" id="productHero"></div>
@@ -4791,6 +4806,38 @@
       realReelsRaw = snap.val() || {};
       renderReelsFeed();
     });
+    loadReelStats();
+  }
+
+  // ---- Petit algorithme de classement des Reels ----
+  // Mélange l'engagement réel (vues, clics vers le produit, commentaires) et
+  // la fraîcheur : un Reel récent démarre devant, mais un Reel plus ancien
+  // peut repasser devant s'il attire vraiment plus d'attention. Les poids
+  // (1 / 3 / 2 / 0,5) sont volontairement simples — à ajuster plus tard selon
+  // ce qu'on observe en vrai, mais le principe (score = engagement − temps)
+  // reste le même.
+  let reelStatsRaw = {};
+  let realReelsStatsQuery = null;
+  function loadReelStats(){
+    if(typeof firebase === 'undefined' || realReelsStatsQuery) return;
+    realReelsStatsQuery = firebase.database().ref('reelStats');
+    realReelsStatsQuery.on('value', (snap) => {
+      reelStatsRaw = snap.val() || {};
+      renderReelsFeed(); // le verrou de rendu (lastReelsRenderKey) évite un rafraîchissement visuel inutile si la liste des Reels n'a pas changé
+    });
+  }
+  function reelScore(id, r){
+    const s = reelStatsRaw[id] || {};
+    const ageHours = Math.max(0, (Date.now() - (r.createdAt || Date.now())) / 3600000);
+    return (s.viewCount || 0) * 1 + (s.productClicks || 0) * 3 + (s.commentCount || 0) * 2 - ageHours * 0.5;
+  }
+  // Compte une vue au plus une fois par Reel pendant cette session (évite de
+  // gonfler le compteur à chaque petit va-et-vient dans le fil).
+  const reelsViewedThisSession = new Set();
+  function recordReelView(id){
+    if(!id || reelsViewedThisSession.has(id) || typeof firebase === 'undefined') return;
+    reelsViewedThisSession.add(id);
+    firebase.database().ref('reelStats/' + id + '/viewCount').transaction((cur) => (cur || 0) + 1);
   }
 
   // N'est appelée à plein (reconstruction du fil) que si la liste de Reels a
@@ -4804,7 +4851,7 @@
     // approuvée — même garde-fou que pour les produits (voir rebuildCatalog).
     const list = Object.entries(realReelsRaw)
       .filter(([, r]) => r && r.videoUrl && shopsByKey[r.shopId])
-      .sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+      .sort((a, b) => reelScore(b[0], b[1]) - reelScore(a[0], a[1]));
     const renderKey = list.map(([id]) => id).join(',');
     if(renderKey === lastReelsRenderKey) return;
     lastReelsRenderKey = renderKey;
@@ -4826,8 +4873,16 @@
               <b style="font-size:13.5px">${escapeHtml(shop.name)}</b>
             </div>
             ${r.caption ? `<div class="reel-caption">${escapeHtml(r.caption)}</div>` : ''}
-            ${r.productKey ? `<div class="reel-product-chip" onclick="openProductFromReel('${r.productKey}')"><i data-feather="shopping-bag"></i><span>Voir le produit</span></div>` : ''}
+            ${r.productKey ? `
+              <div class="reel-actions-row" style="display:flex;gap:8px;margin-top:8px">
+                <div class="reel-product-chip" onclick="openProductFromReel('${r.productKey}','${id}')"><i data-feather="shopping-bag"></i><span>Voir le produit</span></div>
+                <div class="reel-product-chip" style="background:var(--yellow)" onclick="buyFromReel('${r.productKey}','${id}')"><i data-feather="zap"></i><span>Acheter</span></div>
+              </div>
+            ` : ''}
           </div>
+          <button class="reel-comment-btn" onclick="openReelComments('${id}')" style="position:absolute;right:12px;bottom:90px;background:rgba(0,0,0,.45);border:none;border-radius:50%;width:42px;height:42px;display:flex;align-items:center;justify-content:center;color:#fff">
+            <i data-feather="message-circle" style="width:19px;height:19px"></i>
+          </button>
         </div>
       `;
     }).join('');
@@ -4848,6 +4903,8 @@
         if(entry.isIntersecting && entry.intersectionRatio >= 0.6){
           v.muted = reelsMuted;
           v.play().catch(() => {});
+          const reelId = v.closest('.reel-item') && v.closest('.reel-item').dataset.reelId;
+          recordReelView(reelId);
         } else {
           v.pause();
         }
@@ -4867,7 +4924,15 @@
   // Le produit lié à un Reel peut ne pas encore être dans le catalogue chargé
   // (le fil général des produits est plafonné) : on va le chercher au besoin,
   // comme openShop() le fait déjà pour les produits d'une boutique précise.
-  function openProductFromReel(key){
+  // Compte un clic « vers le produit » depuis un Reel donné (vue aussi bien
+  // "Voir le produit" qu'"Acheter" : les deux signalent un vrai intérêt pour
+  // l'article, utile pour le classement — voir reelScore).
+  function trackReelProductClick(reelId){
+    if(!reelId || typeof firebase === 'undefined') return;
+    firebase.database().ref('reelStats/' + reelId + '/productClicks').transaction((cur) => (cur || 0) + 1);
+  }
+  function openProductFromReel(key, reelId){
+    trackReelProductClick(reelId);
     if(productsByKey[key]){ openProduct(key); return; }
     if(typeof firebase === 'undefined') return;
     firebase.database().ref('products/' + key).once('value').then((snap) => {
@@ -4883,6 +4948,68 @@
     }).catch(() => alert('Impossible de charger ce produit pour le moment.'));
   }
   window.openProductFromReel = openProductFromReel;
+
+  // Même destination que "Voir le produit" : la fiche produit réelle, avec
+  // exactement le même parcours d'achat (panier → récapitulatif → paiement)
+  // que les autres articles de la marketplace — aucun circuit séparé.
+  function buyFromReel(key, reelId){
+    openProductFromReel(key, reelId);
+  }
+  window.buyFromReel = buyFromReel;
+
+  // ---- Commentaires sur un Reel ----
+  let openReelCommentsId = null;
+  let reelCommentsRef = null;
+  function openReelComments(reelId){
+    openReelCommentsId = reelId;
+    document.getElementById('reelCommentsOverlay').style.display = 'flex';
+    document.querySelectorAll('#reelsFeed video').forEach((v) => v.pause()); // on met en pause pendant la lecture des commentaires
+    if(typeof firebase === 'undefined') return;
+    reelCommentsRef = firebase.database().ref('reelComments/' + reelId);
+    reelCommentsRef.on('value', renderReelComments);
+  }
+  window.openReelComments = openReelComments;
+
+  function closeReelComments(){
+    document.getElementById('reelCommentsOverlay').style.display = 'none';
+    if(reelCommentsRef) reelCommentsRef.off('value', renderReelComments);
+    reelCommentsRef = null;
+    openReelCommentsId = null;
+    setupReelsObserver(); // reprend la lecture du Reel resté visible
+  }
+  window.closeReelComments = closeReelComments;
+
+  function renderReelComments(snap){
+    const el = document.getElementById('reelCommentsList');
+    if(!el) return;
+    const all = Object.values(snap.val() || {}).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    el.innerHTML = all.length === 0
+      ? '<p class="section-sub">Soyez le premier à commenter.</p>'
+      : all.map((c) => `
+          <div>
+            <b style="font-size:13px">${escapeHtml(c.name || 'Utilisateur')}</b>
+            <p style="font-size:13.5px;margin-top:2px">${escapeHtml(c.text || '')}</p>
+          </div>
+        `).join('');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function postReelComment(){
+    const input = document.getElementById('reelCommentInput');
+    const text = input && input.value.trim();
+    if(!text || !openReelCommentsId || typeof firebase === 'undefined') return;
+    const user = firebase.auth().currentUser;
+    if(!user){ alert('Connectez-vous pour commenter.'); return; }
+    const commentId = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const name = (window.currentAppUser && window.currentAppUser.name) || 'Client Je Livre';
+    firebase.database().ref('reelComments/' + openReelCommentsId + '/' + commentId).set({
+      uid: user.uid, name, text, createdAt: firebase.database.ServerValue.TIMESTAMP,
+    }).then(() => {
+      input.value = '';
+      firebase.database().ref('reelStats/' + openReelCommentsId + '/commentCount').transaction((cur) => (cur || 0) + 1);
+    }).catch((e) => alert('Erreur : ' + e.message));
+  }
+  window.postReelComment = postReelComment;
 
   function formatFCFA(n){ return n.toLocaleString('fr-FR') + ' F'; }
 
@@ -5064,14 +5191,42 @@
   // Recommandation simple par mots-clés : les termes les plus fréquents/
   // récents de l'historique sont comparés au nom et à la catégorie de
   // chaque produit du catalogue actuellement chargé.
+  // ---- Popularité des produits (vues + achats réels) ----
+  // Sert de solution de repli pour "Produits recommandés" quand la personne
+  // n'a pas encore d'historique de recherche exploitable (avant, la section
+  // restait invisible dans ce cas) — même principe simple que pour les Reels.
+  let productStatsRaw = {};
+  let productStatsQuery = null;
+  function loadProductStats(){
+    if(typeof firebase === 'undefined' || productStatsQuery) return;
+    productStatsQuery = firebase.database().ref('productStats');
+    productStatsQuery.on('value', (snap) => {
+      productStatsRaw = snap.val() || {};
+      renderRecommendedRow();
+    });
+  }
+  function productPopularityScore(key){
+    const s = productStatsRaw[key] || {};
+    return (s.viewCount || 0) * 1 + (s.purchaseCount || 0) * 5;
+  }
+  function getPopularProducts(){
+    return Object.values(productsByKey)
+      .map((p) => ({ p, score: productPopularityScore(p.key) }))
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10)
+      .map((x) => x.p);
+  }
+
   function getRecommendedProducts(){
-    if(!window.currentAppUser || !window.currentAppUser.searchHistory) return [];
+    loadProductStats();
+    if(!window.currentAppUser || !window.currentAppUser.searchHistory) return getPopularProducts();
     const terms = Object.values(window.currentAppUser.searchHistory)
       .sort((a, b) => (b.count - a.count) || ((b.lastSearchedAt || 0) - (a.lastSearchedAt || 0)))
       .slice(0, 8)
       .map((t) => normalizeSearchText(t.term))
       .filter(Boolean);
-    if(terms.length === 0) return [];
+    if(terms.length === 0) return getPopularProducts();
     const scored = [];
     Object.values(productsByKey).forEach((p) => {
       const name = normalizeSearchText(p.name);
@@ -5084,7 +5239,7 @@
       if(score > 0) scored.push({ p, score });
     });
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, 10).map((x) => x.p);
+    return scored.length > 0 ? scored.slice(0, 10).map((x) => x.p) : getPopularProducts();
   }
 
   function renderRecommendedRow(){
@@ -5268,11 +5423,20 @@
     renderProducts();
   }
 
+  // Une seule vue comptée par produit et par session (même principe que les Reels).
+  const productsViewedThisSession = new Set();
+  function recordProductView(key){
+    if(!key || productsViewedThisSession.has(key) || typeof firebase === 'undefined') return;
+    productsViewedThisSession.add(key);
+    firebase.database().ref('productStats/' + key + '/viewCount').transaction((cur) => (cur || 0) + 1);
+  }
+
   function openProduct(key){
     currentProductKey = key;
     productQty = 1;
     const p = productsByKey[key];
     if(!p) return;
+    recordProductView(key);
     const shop = shopsByKey[p.shop];
     const hero = document.getElementById('productHero');
     hero.style.background = p.photoUrl ? 'none' : p.bg;
@@ -6920,6 +7084,10 @@
             earningsBalance: firebase.database.ServerValue.increment(cached.deliveryFee),
           });
         }
+        (cached.items || []).forEach((it) => {
+          if(!it.pid) return;
+          firebase.database().ref('productStats/' + it.pid + '/purchaseCount').transaction((cur) => (cur || 0) + (it.qty || 1));
+        });
         renderMyOrders();
       });
     }).catch((e) => alert('Erreur : ' + e.message));
