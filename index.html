@@ -4794,14 +4794,44 @@
     realReelsStatsQuery = firebase.database().ref('reelStats');
     realReelsStatsQuery.on('value', (snap) => {
       reelStatsRaw = snap.val() || {};
-      renderReelsFeed(); // le verrou de rendu (lastReelsRenderKey) évite un rafraîchissement visuel inutile si la liste des Reels n'a pas changé
+      // Forcé : la liste des Reels ne change pas pour autant, mais les
+      // compteurs affichés (vues, likes, commentaires) doivent, eux, bien se
+      // mettre à jour — sans ce "true", le verrou anti-scintillement les gèlerait.
+      renderReelsFeed(true);
     });
   }
   function reelScore(id, r){
     const s = reelStatsRaw[id] || {};
     const ageHours = Math.max(0, (Date.now() - (r.createdAt || Date.now())) / 3600000);
-    return (s.viewCount || 0) * 1 + (s.productClicks || 0) * 3 + (s.commentCount || 0) * 2 - ageHours * 0.5;
+    return (s.viewCount || 0) * 1 + (s.productClicks || 0) * 3 + (s.commentCount || 0) * 2 + (s.likeCount || 0) * 2 - ageHours * 0.5;
   }
+
+  // ---- Likes sur les Reels ----
+  // Indexés par utilisateur (reelLikes/<uid>/<reelId>) plutôt que par Reel :
+  // un seul chargement donne la liste complète de CE que CETTE personne a
+  // aimé, sans avoir à interroger chaque Reel un par un pour savoir si le
+  // cœur doit déjà être plein à l'affichage.
+  let myReelLikes = {};
+  let myReelLikesLoaded = false;
+  function loadMyReelLikes(cb){
+    const user = typeof firebase !== 'undefined' && firebase.auth().currentUser;
+    if(!user){ myReelLikes = {}; myReelLikesLoaded = true; if(cb) cb(); return; }
+    firebase.database().ref('reelLikes/' + user.uid).once('value').then((snap) => {
+      myReelLikes = snap.val() || {};
+      myReelLikesLoaded = true;
+      if(cb) cb();
+    }).catch(() => { myReelLikesLoaded = true; if(cb) cb(); });
+  }
+  function toggleReelLike(reelId){
+    const user = typeof firebase !== 'undefined' && firebase.auth().currentUser;
+    if(!user){ alert('Connectez-vous pour aimer ce Reel.'); return; }
+    const wasLiked = !!myReelLikes[reelId];
+    myReelLikes[reelId] = !wasLiked; // mise à jour immédiate à l'écran, sans attendre le serveur
+    renderReelsFeed(true);
+    firebase.database().ref('reelLikes/' + user.uid + '/' + reelId).set(!wasLiked);
+    firebase.database().ref('reelStats/' + reelId + '/likeCount').transaction((cur) => Math.max(0, (cur || 0) + (wasLiked ? -1 : 1)));
+  }
+  window.toggleReelLike = toggleReelLike;
   // Compte une vue au plus une fois par Reel pendant cette session (évite de
   // gonfler le compteur à chaque petit va-et-vient dans le fil).
   const reelsViewedThisSession = new Set();
@@ -4814,17 +4844,28 @@
   // N'est appelée à plein (reconstruction du fil) que si la liste de Reels a
   // réellement changé : sinon, revenir sur cet écran après avoir consulté un
   // produit réinitialiserait le défilement et interromprait la vidéo en cours.
-  function renderReelsFeed(){
+  // Petit format court pour les compteurs (1,2 K / 98 K), comme sur les
+  // réseaux dont la mise en page s'inspire ici.
+  function formatCompactCount(n){
+    n = n || 0;
+    if(n < 1000) return String(n);
+    if(n < 10000) return (n / 1000).toFixed(1).replace('.0', '') + ' K';
+    if(n < 1000000) return Math.round(n / 1000) + ' K';
+    return (n / 1000000).toFixed(1).replace('.0', '') + ' M';
+  }
+
+  function renderReelsFeed(force){
     const el = document.getElementById('reelsFeed');
     if(!el) return;
     loadRealReels();
+    if(!myReelLikesLoaded){ loadMyReelLikes(() => renderReelsFeed(true)); }
     // Un Reel n'est repris que si sa boutique existe dans le catalogue, donc
     // approuvée — même garde-fou que pour les produits (voir rebuildCatalog).
     const list = Object.entries(realReelsRaw)
       .filter(([, r]) => r && r.videoUrl && shopsByKey[r.shopId])
       .sort((a, b) => reelScore(b[0], b[1]) - reelScore(a[0], a[1]));
     const renderKey = list.map(([id]) => id).join(',');
-    if(renderKey === lastReelsRenderKey) return;
+    if(renderKey === lastReelsRenderKey && !force) return;
     lastReelsRenderKey = renderKey;
 
     if(list.length === 0){
@@ -4834,6 +4875,8 @@
     }
     el.innerHTML = list.map(([id, r]) => {
       const shop = shopsByKey[r.shopId];
+      const stats = reelStatsRaw[id] || {};
+      const liked = !!myReelLikes[id];
       return `
         <div class="reel-item" data-reel-id="${id}">
           <video src="${escapeHtml(r.videoUrl)}" loop muted playsinline preload="metadata"></video>
@@ -4844,16 +4887,30 @@
               <b style="font-size:13.5px">${escapeHtml(shop.name)}</b>
             </div>
             ${r.caption ? `<div class="reel-caption">${escapeHtml(r.caption)}</div>` : ''}
+          </div>
+          <div class="reel-rail" style="position:absolute;right:10px;bottom:96px;display:flex;flex-direction:column;align-items:center;gap:16px">
+            <div class="reel-rail-avatar" onclick="openShop('${r.shopId}')" style="width:42px;height:42px;border-radius:50%;overflow:hidden;border:2px solid #fff;cursor:pointer">${mediaHtml(shop, 21)}</div>
+            <button class="reel-rail-btn" onclick="toggleReelLike('${id}')" style="background:none;border:none;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11.5px;font-weight:700;color:#fff">
+              ${liked
+                ? '<span style="font-size:25px;line-height:27px;color:#FF3B5C">&#10084;</span>'
+                : '<i data-feather="heart" style="width:27px;height:27px"></i>'}
+              <span>${formatCompactCount(stats.likeCount)}</span>
+            </button>
+            <button class="reel-rail-btn" onclick="openReelComments('${id}')" style="background:none;border:none;color:#fff;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11.5px;font-weight:700">
+              <i data-feather="message-circle" style="width:25px;height:25px"></i>
+              <span>${formatCompactCount(stats.commentCount)}</span>
+            </button>
+            <button class="reel-rail-btn" onclick="shareReel('${id}')" style="background:none;border:none;color:#fff;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11.5px;font-weight:700">
+              <i data-feather="share-2" style="width:25px;height:25px"></i>
+              <span>Partager</span>
+            </button>
             ${r.productKey ? `
-              <div class="reel-actions-row" style="display:flex;gap:8px;margin-top:8px">
-                <div class="reel-product-chip" onclick="openProductFromReel('${r.productKey}','${id}')"><i data-feather="shopping-bag"></i><span>Voir le produit</span></div>
-                <div class="reel-product-chip" style="background:var(--yellow)" onclick="buyFromReel('${r.productKey}','${id}')"><i data-feather="zap"></i><span>Acheter</span></div>
-              </div>
+              <button class="reel-rail-btn" onclick="buyFromReel('${r.productKey}','${id}')" style="background:var(--yellow);border:none;color:#0D0D0C;display:flex;flex-direction:column;align-items:center;gap:1px;font-size:10.5px;font-weight:800;border-radius:12px;padding:7px 6px;width:42px">
+                <i data-feather="shopping-bag" style="width:19px;height:19px"></i>
+                <span>Acheter</span>
+              </button>
             ` : ''}
           </div>
-          <button class="reel-comment-btn" onclick="openReelComments('${id}')" style="position:absolute;right:12px;bottom:90px;background:rgba(0,0,0,.45);border:none;border-radius:50%;width:42px;height:42px;display:flex;align-items:center;justify-content:center;color:#fff">
-            <i data-feather="message-circle" style="width:19px;height:19px"></i>
-          </button>
         </div>
       `;
     }).join('');
@@ -4927,6 +4984,22 @@
     openProductFromReel(key, reelId);
   }
   window.buyFromReel = buyFromReel;
+
+  // Partage natif si le téléphone le propose (WhatsApp, SMS…), sinon lien copié.
+  function shareReel(reelId){
+    const r = realReelsRaw[reelId];
+    const shop = r && shopsByKey[r.shopId];
+    const text = shop ? `Regardez ce Reel de ${shop.name} sur Je Livre !` : 'Regardez ce Reel sur Je Livre !';
+    const url = (typeof window.APP_PUBLIC_URL === 'string' ? window.APP_PUBLIC_URL : location.origin + location.pathname) + '#reel=' + reelId;
+    if(navigator.share){
+      navigator.share({ title: 'Je Livre', text, url }).catch(() => {});
+    } else if(navigator.clipboard){
+      navigator.clipboard.writeText(url).then(() => alert('Lien copié !')).catch(() => alert(url));
+    } else {
+      alert(url);
+    }
+  }
+  window.shareReel = shareReel;
 
   // ---- Commentaires sur un Reel ----
   let openReelCommentsId = null;
