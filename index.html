@@ -1708,11 +1708,6 @@
         </div>
         <button class="btn btn-outline" style="margin-top:10px" onclick="requestDriverWithdrawal()">Demander un retrait</button>
         <p class="section-sub" style="margin-top:6px">Crédité automatiquement pour chaque livraison payée en ligne (le client a déjà réglé la plateforme, vous n'avez rien encaissé).</p>
-        <div id="remittanceSection" style="display:none;margin-top:14px">
-          <h2 class="section-title" style="font-size:17px">À reverser aux boutiques</h2>
-          <p class="section-sub">Encaissé à la livraison pour le compte du vendeur — à leur reverser.</p>
-          <div id="remittanceList"></div>
-        </div>
         <div class="avail-card">
           <div class="avail-dot" id="availDot"></div>
           <b id="availLabel">Disponible</b>
@@ -2471,7 +2466,6 @@
   function offRef(ref){ try { if(ref) ref.off(); } catch(e){ /* ignoré */ } }
 
   let realShopsQuery = null, realProductsQuery = null, realReelsQuery = null, realAdsRef = null, addressesRef = null;
-  let driverRemittancesRef = null;
   const notifListeners = {}; // écouteur de notifications, un par écran
 
   function resetClientSession(){
@@ -2504,13 +2498,12 @@
   function resetDriverSession(){
     offRef(deliveryReqRef); deliveryReqRef = null;
     offRef(marketplaceReqRef); marketplaceReqRef = null;
-    offRef(driverRemittancesRef); driverRemittancesRef = null;
     seenDeliveryReqIds = null; seenMarketplaceReqIds = null;
     lastDeliveryRequestsSnap = {}; lastMarketplaceRequestsSnap = {};
     window.dismissedRequests = new Set();
     window.currentCourse = null; courseStep = 0;
     if(driverWatchId != null && navigator.geolocation){ navigator.geolocation.clearWatch(driverWatchId); driverWatchId = null; }
-    ['deliveryRequestsList', 'marketplaceRequestsList', 'remittanceList'].forEach((id) => {
+    ['deliveryRequestsList', 'marketplaceRequestsList'].forEach((id) => {
       const el = document.getElementById(id); if(el) el.innerHTML = '';
     });
   }
@@ -3472,34 +3465,11 @@
     return Math.round(price * 0.9);
   }
 
-  function loadDriverRemittances(){
-    const section = document.getElementById('remittanceSection');
-    const list = document.getElementById('remittanceList');
-    if(!section || !list || !window.currentDriverUser) return;
-    if(driverRemittancesRef) return; // déjà abonné : sinon un écouteur de plus à chaque ouverture du dashboard
-    driverRemittancesRef = driverDb.ref('remittances').orderByChild('driverId').equalTo(window.currentDriverUser.uid);
-    driverRemittancesRef.on('value', (snap) => {
-      const all = Object.entries(snap.val() || {}).filter(([, r]) => r && r.status !== 'confirmed');
-      if(all.length === 0){ section.style.display = 'none'; return; }
-      section.style.display = 'block';
-      all.sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
-      list.innerHTML = all.map(([id, r]) => `
-        <div class="req-card">
-          <div class="top"><b>${escapeHtml(r.shopName)}</b><span>${formatFCFA(r.amount)}</span></div>
-          <div class="meta">Commande ${escapeHtml(r.orderId)} ${r.status === 'declared' ? '· En attente de confirmation' : ''}</div>
-          ${r.status === 'owed' ? `<button class="btn btn-yellow" style="margin-top:8px;padding:9px" onclick="declareRemittance('${id}')">J'ai reversé cette somme</button>` : ''}
-        </div>
-      `).join('');
-      feather.replace({ 'stroke-width': 2.25 });
-    });
-  }
-
-  function declareRemittance(id){
-    if(!confirm('Confirmez-vous avoir remis cette somme à la boutique (ou à Je Livre) ?')) return;
-    driverDb.ref('remittances/' + id).update({ status: 'declared', declaredAt: firebase.database.ServerValue.TIMESTAMP })
-      .catch((e) => alert('Erreur : ' + e.message));
-  }
-  window.declareRemittance = declareRemittance;
+  // La reversion de cash collecté pour le compte d'une boutique n'existe
+  // plus : le marketplace ne se paie plus qu'en ligne (voir
+  // beginAwaitingClientPayment). D'éventuelles anciennes demandes dans
+  // "remittances" (d'avant ce changement) restent consultables depuis la
+  // console Firebase si besoin, mais ne sont plus affichées ici.
 
   function renderCommissionBanner(){
     const banner = document.getElementById('commissionBanner');
@@ -4388,7 +4358,7 @@
           if(dot) dot.style.background = window.driverAvailable ? '#3EAF4C' : '#B9B7B0';
         }
       }
-      listenMarketplaceRequests(); listenDeliveryRequests(); loadDriverStats(); renderCommissionBanner(); loadDriverRemittances(); loadDriverEarningsBalance();
+      listenMarketplaceRequests(); listenDeliveryRequests(); loadDriverStats(); renderCommissionBanner(); loadDriverEarningsBalance();
     }
     if (current === 'course-active') { renderCourseMap(); }
     if (current === 'dashboard-entreprise') { listenFleet(); renderFleet(); renderFleetMap(); }
@@ -7247,6 +7217,37 @@
       finishCourseStep();
     }
   }
+
+  // ---- Indicatif automatique sur tous les champs téléphone ----
+  // Fixé à +226 (Burkina Faso) : toute l'app (SMS, paiement Mobile Money,
+  // tarifs) n'opère que là pour l'instant, donc détecter une autre zone ne
+  // mènerait nulle part — mais tout est regroupé ici, un seul endroit à
+  // changer le jour où l'app couvrirait d'autres pays.
+  const PHONE_PREFIX = '+226 ';
+  function applyPhonePrefix(el){
+    if(!el || el.dataset.prefixBound) return;
+    el.dataset.prefixBound = '1';
+    if(!el.value) el.value = PHONE_PREFIX;
+    const guard = () => {
+      if(!el.value.startsWith(PHONE_PREFIX)){
+        // L'indicatif a été effacé ou modifié : on le replace devant ce qui reste.
+        const rest = el.value.replace(/^\+?226\s*/, '');
+        el.value = PHONE_PREFIX + rest;
+      }
+      if(el.selectionStart !== null && el.selectionStart < PHONE_PREFIX.length){
+        el.setSelectionRange(el.value.length, el.value.length);
+      }
+    };
+    el.addEventListener('focus', guard);
+    el.addEventListener('input', guard);
+    el.addEventListener('click', guard);
+  }
+  function initPhonePrefixFields(){
+    document.querySelectorAll('input[type="tel"]').forEach(applyPhonePrefix);
+  }
+  initPhonePrefixFields();
+  // Pour tout champ téléphone ajouté dynamiquement par la suite (ex. un futur écran) :
+  window.applyPhonePrefix = applyPhonePrefix;
 
   initUploadBoxes();
   feather.replace({ 'stroke-width': 2.25 });
