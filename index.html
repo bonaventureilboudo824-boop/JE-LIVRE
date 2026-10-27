@@ -707,6 +707,17 @@
   .auth-switch a{ color:var(--yellow); font-weight:700; cursor:pointer; text-decoration:underline; }
   .auth-demo-tag{ text-align:center; background:#2A2412; color:var(--yellow); font-size:10.5px; font-weight:700; padding:6px 10px; border-radius:999px; margin-bottom:16px; }
   .auth-step-hint{ font-size:12px; color:#8A8880; margin-bottom:10px; line-height:1.4; }
+  /* Case de saisie du code de vérification SMS (livreur, entreprise, boutique) */
+  .otp-input{
+    width:100%; box-sizing:border-box; text-align:center;
+    font-family:'Barlow Condensed',sans-serif; font-weight:800;
+    font-size:30px; letter-spacing:16px; color:var(--text);
+    border:2px solid var(--border); border-radius:var(--radius-md);
+    padding:14px 10px 14px 26px; background:var(--card);
+    transition:border-color .15s, box-shadow .15s;
+  }
+  .otp-input::placeholder{ color:#C9C6BC; letter-spacing:16px; }
+  .otp-input:focus{ outline:none; border-color:var(--yellow); box-shadow:0 0 0 4px rgba(255,198,41,.22); }
   .auth-step-hint b{ color:#fff; }
 
   /* ---------- Reels (vidéos courtes publiées par les boutiques) ---------- */
@@ -799,7 +810,7 @@
     <div id="driverAuthViewPending" style="display:none;text-align:center">
       <p style="color:#8A8880;font-size:13px;line-height:1.5;margin-bottom:16px" id="driverAuthPendingMsg"></p>
       <div id="driverAuthPendingCodeBox" style="display:none">
-        <input id="driverPendingOtpInput" inputmode="numeric" maxlength="6" placeholder="- - - - - -" autocomplete="one-time-code">
+        <input id="driverPendingOtpInput" class="otp-input" inputmode="numeric" maxlength="6" placeholder="------" autocomplete="one-time-code">
         <button class="auth-submit" onclick="verifyDriverPendingOtp()">Vérifier</button>
       </div>
       <button class="auth-submit" id="driverAuthPendingBtn" style="display:none;margin-top:8px" onclick="resendDriverPendingOtp()">Recevoir un code par SMS</button>
@@ -848,7 +859,7 @@
     <div id="vendorAuthViewPending" style="display:none;text-align:center">
       <p style="color:#8A8880;font-size:13px;line-height:1.5;margin-bottom:16px" id="vendorAuthPendingMsg"></p>
       <div id="vendorAuthPendingCodeBox" style="display:none">
-        <input id="vendorPendingOtpInput" inputmode="numeric" maxlength="6" placeholder="- - - - - -" autocomplete="one-time-code">
+        <input id="vendorPendingOtpInput" class="otp-input" inputmode="numeric" maxlength="6" placeholder="------" autocomplete="one-time-code">
         <button class="auth-submit" onclick="verifyVendorPendingOtp()">Vérifier</button>
       </div>
       <button class="auth-submit" id="vendorAuthPendingBtn" style="display:none;margin-top:8px" onclick="resendVendorPendingOtp()">Recevoir un code par SMS</button>
@@ -916,7 +927,7 @@
     <div id="entAuthViewPending" style="display:none;text-align:center">
       <p style="color:#8A8880;font-size:13px;line-height:1.5;margin-bottom:16px" id="entAuthPendingMsg"></p>
       <div id="entAuthPendingCodeBox" style="display:none">
-        <input id="entPendingOtpInput" inputmode="numeric" maxlength="6" placeholder="- - - - - -" autocomplete="one-time-code">
+        <input id="entPendingOtpInput" class="otp-input" inputmode="numeric" maxlength="6" placeholder="------" autocomplete="one-time-code">
         <button class="auth-submit" onclick="verifyEntreprisePendingOtp()">Vérifier</button>
       </div>
       <button class="auth-submit" id="entAuthPendingBtn" style="display:none;margin-top:8px" onclick="resendEntreprisePendingOtp()">Recevoir un code par SMS</button>
@@ -1308,6 +1319,10 @@
           <div><b id="productSeller">—</b><span>Voir la boutique</span></div>
           <div class="opt-chev" style="margin-left:auto"><i data-feather="chevron-right"></i></div>
         </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn btn-outline" style="flex:1;padding:10px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px" onclick="shareProduct(currentProductKey)"><i data-feather="share-2" style="width:16px;height:16px"></i>Partager</button>
+          <button class="btn btn-outline" style="flex:1;padding:10px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;color:#1877F2;border-color:#1877F2" onclick="promoteOnFacebook(currentProductKey)"><i data-feather="facebook" style="width:16px;height:16px"></i>Promouvoir</button>
+        </div>
         <div class="closed-banner" id="productClosedNotice" style="display:none;background:#FBEAEA;border:1px solid #F3C6C6;border-radius:var(--radius-md);padding:12px 14px;margin-top:14px;color:#B3261E;font-weight:600;font-size:13.5px">
           Cette boutique est fermée pour le moment. Revenez pendant ses horaires d'ouverture.
         </div>
@@ -1454,7 +1469,7 @@
         <div class="step-label">Étape 2 sur 3 — Vérification du téléphone</div>
         <div id="regShopOtpStep">
           <p class="auth-step-hint">Code envoyé au <b id="regShopPhoneRecap"></b>.</p>
-          <input id="regShopOtpInput" inputmode="numeric" maxlength="6" placeholder="- - - - - -" autocomplete="one-time-code">
+          <input id="regShopOtpInput" class="otp-input" inputmode="numeric" maxlength="6" placeholder="------" autocomplete="one-time-code">
           <div class="auth-error" id="regShopOtpError" style="text-align:left;margin-top:2px"></div>
           <button class="btn btn-yellow" style="margin-top:14px" onclick="verifyVendorOtp()">Vérifier</button>
           <div class="link-row" style="margin-top:10px"><a onclick="resendVendorOtp()">Renvoyer le code</a></div>
@@ -1603,7 +1618,7 @@
         <div class="step-label">Étape 2 sur 4 — Vérification du téléphone</div>
         <div id="regDriverOtpStep">
           <p class="auth-step-hint">Code envoyé au <b id="regDriverPhoneRecap"></b>.</p>
-          <input id="regDriverOtpInput" inputmode="numeric" maxlength="6" placeholder="- - - - - -" autocomplete="one-time-code">
+          <input id="regDriverOtpInput" class="otp-input" inputmode="numeric" maxlength="6" placeholder="------" autocomplete="one-time-code">
           <div class="auth-error" id="regDriverOtpError" style="text-align:left;margin-top:2px"></div>
           <button class="btn btn-yellow" style="margin-top:14px" onclick="verifyDriverOtp()">Vérifier</button>
           <div class="link-row" style="margin-top:10px"><a onclick="resendDriverOtp()">Renvoyer le code</a></div>
@@ -1659,7 +1674,7 @@
         <div class="step-label">Étape 2 sur 3 — Vérification du téléphone</div>
         <div id="regEntOtpStep">
           <p class="auth-step-hint">Code envoyé au <b id="regEntPhoneRecap"></b>.</p>
-          <input id="regEntOtpInput" inputmode="numeric" maxlength="6" placeholder="- - - - - -" autocomplete="one-time-code">
+          <input id="regEntOtpInput" class="otp-input" inputmode="numeric" maxlength="6" placeholder="------" autocomplete="one-time-code">
           <div class="auth-error" id="regEntOtpError" style="text-align:left;margin-top:2px"></div>
           <button class="btn btn-yellow" style="margin-top:14px" onclick="verifyEntrepriseOtp()">Vérifier</button>
           <div class="link-row" style="margin-top:10px"><a onclick="resendEntrepriseOtp()">Renvoyer le code</a></div>
@@ -4732,6 +4747,22 @@
     renderRecommendedRow();
     renderProducts();
     if(stack[stack.length - 1] === 'shop' && window.currentShopKey) renderShopPage(window.currentShopKey);
+    handlePendingDeepLink();
+  }
+
+  // ---- Liens profonds (#product=, #shop=, #reel=) ----
+  // Capturé une seule fois, tout au début, avant que la navigation normale de
+  // l'app ne modifie quoi que ce soit. On n'agit dessus qu'une fois le
+  // catalogue chargé (sinon le produit/la boutique visée n'existe pas encore
+  // dans productsByKey/shopsByKey) — et une seule fois au total.
+  const pendingDeepLinkHash = (location.hash || '').replace(/^#/, '');
+  let deepLinkHandled = false;
+  function handlePendingDeepLink(){
+    if(deepLinkHandled || !pendingDeepLinkHash) return;
+    const [key, value] = pendingDeepLinkHash.split('=');
+    if(key === 'product' && productsByKey[value]){ deepLinkHandled = true; openProduct(value); }
+    else if(key === 'shop' && shopsByKey[value]){ deepLinkHandled = true; openShop(value); }
+    else if(key === 'reel' && realReelsRaw[value]){ deepLinkHandled = true; go('reels'); }
   }
 
   function loadRealShops(){
@@ -4802,7 +4833,18 @@
   function reelScore(id, r){
     const s = reelStatsRaw[id] || {};
     const ageHours = Math.max(0, (Date.now() - (r.createdAt || Date.now())) / 3600000);
-    return (s.viewCount || 0) * 1 + (s.productClicks || 0) * 3 + (s.commentCount || 0) * 2 + (s.likeCount || 0) * 2 - ageHours * 0.5;
+    // Signaux globaux (pareils pour tout le monde) : vues, clics produit,
+    // commentaires, likes, et maintenant le temps de visionnage réel cumulé
+    // (en secondes) — un Reel qui retient vraiment l'attention remonte plus
+    // qu'un Reel juste survolé, même à nombre de vues égal.
+    const globalScore = (s.viewCount || 0) * 1 + (s.productClicks || 0) * 3 + (s.commentCount || 0) * 2 + (s.likeCount || 0) * 2 + ((s.watchMs || 0) / 1000) * 0.5 - ageHours * 0.5;
+    // Signal personnel (différent pour chaque personne) : plus elle a passé
+    // de temps sur la catégorie de CETTE boutique, plus ce Reel-là remonte
+    // dans SON fil à elle précisément.
+    const shop = shopsByKey[r.shopId];
+    const myAffinityMs = (shop && shop.category && myAffinity[shop.category]) || 0;
+    const personalBonus = (myAffinityMs / 1000) * 0.3;
+    return globalScore + personalBonus;
   }
 
   // ---- Likes sur les Reels ----
@@ -4840,6 +4882,39 @@
     firebase.database().ref('reelStats/' + id + '/viewCount').transaction((cur) => (cur || 0) + 1);
   }
 
+  // ---- Temps de visionnage réel, et goûts de la personne ----
+  // En plus des vues/likes/commentaires (globaux, pareils pour tout le
+  // monde), on mesure combien de temps CHAQUE Reel retient vraiment
+  // l'attention, et à quelles catégories de boutiques CETTE personne
+  // consacre le plus de temps — pour faire remonter, dans SON fil
+  // uniquement, ce qui lui correspond le mieux.
+  let reelWatchStart = {}; // reelId -> horodatage du début de la lecture en cours
+  function recordReelWatchStart(id){ if(id) reelWatchStart[id] = Date.now(); }
+  function recordReelWatchEnd(id){
+    if(!id || !reelWatchStart[id] || typeof firebase === 'undefined') return;
+    const elapsed = Math.min(Date.now() - reelWatchStart[id], 5 * 60 * 1000); // plafonné : une minuterie oubliée ne doit jamais fausser massivement les chiffres
+    delete reelWatchStart[id];
+    if(elapsed < 1000) return; // un simple passage rapide n'en dit rien sur l'intérêt réel
+    firebase.database().ref('reelStats/' + id + '/watchMs').transaction((cur) => (cur || 0) + elapsed);
+    const user = firebase.auth().currentUser;
+    const r = realReelsRaw[id];
+    const shop = r && shopsByKey[r.shopId];
+    if(user && shop && shop.category){
+      firebase.database().ref('userAffinity/' + user.uid + '/' + shop.category).transaction((cur) => (cur || 0) + elapsed);
+    }
+  }
+  let myAffinity = {};
+  let myAffinityLoaded = false;
+  function loadMyAffinity(cb){
+    const user = typeof firebase !== 'undefined' && firebase.auth().currentUser;
+    if(!user){ myAffinity = {}; myAffinityLoaded = true; if(cb) cb(); return; }
+    firebase.database().ref('userAffinity/' + user.uid).once('value').then((snap) => {
+      myAffinity = snap.val() || {};
+      myAffinityLoaded = true;
+      if(cb) cb();
+    }).catch(() => { myAffinityLoaded = true; if(cb) cb(); });
+  }
+
   // N'est appelée à plein (reconstruction du fil) que si la liste de Reels a
   // réellement changé : sinon, revenir sur cet écran après avoir consulté un
   // produit réinitialiserait le défilement et interromprait la vidéo en cours.
@@ -4858,6 +4933,7 @@
     if(!el) return;
     loadRealReels();
     if(!myReelLikesLoaded){ loadMyReelLikes(() => renderReelsFeed(true)); }
+    if(!myAffinityLoaded){ loadMyAffinity(() => renderReelsFeed(true)); }
     // Un Reel n'est repris que si sa boutique existe dans le catalogue, donc
     // approuvée — même garde-fou que pour les produits (voir rebuildCatalog).
     const list = Object.entries(realReelsRaw)
@@ -4927,13 +5003,15 @@
     reelsObserver = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         const v = entry.target;
+        const reelId = v.closest('.reel-item') && v.closest('.reel-item').dataset.reelId;
         if(entry.isIntersecting && entry.intersectionRatio >= 0.6){
           v.muted = reelsMuted;
           v.play().catch(() => {});
-          const reelId = v.closest('.reel-item') && v.closest('.reel-item').dataset.reelId;
           recordReelView(reelId);
+          recordReelWatchStart(reelId);
         } else {
           v.pause();
+          recordReelWatchEnd(reelId);
         }
       });
     }, { root: el, threshold: [0, 0.6, 1] });
@@ -4999,6 +5077,40 @@
     }
   }
   window.shareReel = shareReel;
+
+  // Lien direct vers un produit précis — ouvre vraiment ce produit une fois
+  // cliqué (voir handlePendingDeepLink), pas juste l'accueil de l'app.
+  function productShareUrl(key){
+    return (typeof window.APP_PUBLIC_URL === 'string' ? window.APP_PUBLIC_URL : location.origin + location.pathname) + '#product=' + key;
+  }
+
+  // Partage natif (WhatsApp, Messenger, SMS…) — même principe que pour les Reels.
+  function shareProduct(key){
+    const p = productsByKey[key];
+    if(!p) return;
+    const shop = shopsByKey[p.shop];
+    const text = `${p.name}${shop ? ' · ' + shop.name : ''} — ${formatFCFA(p.price)} sur Je Livre`;
+    const url = productShareUrl(key);
+    if(navigator.share){
+      navigator.share({ title: 'Je Livre', text, url }).catch(() => {});
+    } else if(navigator.clipboard){
+      navigator.clipboard.writeText(url).then(() => alert('Lien copié !')).catch(() => alert(url));
+    } else {
+      alert(url);
+    }
+  }
+  window.shareProduct = shareProduct;
+
+  // Ouvre la fenêtre de partage Facebook elle-même, avec le lien du produit
+  // déjà prêt — aucune clé API, aucune autorisation à demander : c'est la
+  // boutique qui rédige et publie elle-même, comme si elle collait le lien
+  // à la main. Fonctionne pour Facebook comme Messenger.
+  function promoteOnFacebook(key){
+    const url = productShareUrl(key);
+    const shareUrl = 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(url);
+    window.open(shareUrl, '_blank');
+  }
+  window.promoteOnFacebook = promoteOnFacebook;
 
   // ---- Commentaires sur un Reel ----
   let openReelCommentsId = null;
