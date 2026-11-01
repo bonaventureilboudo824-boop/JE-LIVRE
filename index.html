@@ -5,9 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Je Livre — Bêta</title>
 <link rel="manifest" href="manifest.json">
+<script>
+/* Capture précoce de l'invite d'installation (Android/Chrome) et détection de l'app native (Play Store) */
+(function(){
+  try{
+    var n = window.Capacitor;
+    var native = (n && typeof n.isNativePlatform === 'function' && n.isNativePlatform()) ||
+                 (location.protocol === 'https:' && location.hostname === 'localhost') ||
+                 location.protocol === 'capacitor:' ||
+                 (document.referrer || '').indexOf('android-app://') === 0;
+    window.__jlNative = !!native;
+    if(native) document.documentElement.classList.add('native-app');
+  }catch(e){}
+  window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); window.__jlDeferred = e; window.dispatchEvent(new Event('jl-install-ready')); });
+})();
+</script>
 <meta name="theme-color" content="#0D0D0C">
 <link rel="icon" href="icon-192.png">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="Je Livre">
@@ -19,6 +34,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-app-compat.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-database-compat.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-auth-compat.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-messaging-compat.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/firebase/10.12.2/firebase-functions-compat.min.js"></script>
 <style>
   :root{
@@ -680,6 +696,17 @@
     font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:12px; cursor:pointer;
   }
   .install-banner .close-x{ background:transparent; color:#8A8880; padding:4px; font-size:15px; line-height:1; }
+  .native-app .install-banner, .native-app .ios-sheet-overlay{ display:none !important; }
+  .ios-sheet-overlay{ display:none; position:fixed; inset:0; z-index:10000; background:rgba(13,13,12,.62); align-items:flex-end; justify-content:center; }
+  .ios-sheet-overlay.show{ display:flex; }
+  .ios-sheet{ width:100%; max-width:480px; background:#fff; color:#0D0D0C; border-radius:22px 22px 0 0; padding:20px 20px calc(22px + env(safe-area-inset-bottom)); font-family:'Inter',sans-serif; box-shadow:0 -10px 40px rgba(0,0,0,.35); }
+  .ios-sheet .ios-title{ font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:22px; display:block; margin-bottom:10px; }
+  .ios-sheet .ios-warn{ background:#FFF3C4; border-radius:12px; padding:10px 12px; font-size:12.5px; line-height:1.4; margin-bottom:12px; }
+  .ios-sheet ol{ list-style:none; margin:0 0 14px; padding:0; display:flex; flex-direction:column; gap:10px; }
+  .ios-sheet li{ display:flex; gap:12px; align-items:flex-start; font-size:14px; line-height:1.4; }
+  .ios-sheet li .n{ flex:0 0 26px; width:26px; height:26px; border-radius:50%; background:#0D0D0C; color:#FFC629; font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:15px; display:flex; align-items:center; justify-content:center; }
+  .ios-sheet li svg{ vertical-align:-4px; }
+  .ios-sheet .ios-ok{ width:100%; background:#FFC629; color:#0D0D0C; border:none; border-radius:999px; padding:13px; font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:16px; cursor:pointer; }
 
   /* ---- Choix expéditeur/destinataire (import position) ---- */
   .choice-overlay{ display:none; position:fixed; inset:0; z-index:9998; background:rgba(13,13,12,.55); align-items:center; justify-content:center; padding:24px; }
@@ -719,6 +746,8 @@
   .otp-input::placeholder{ color:#C9C6BC; letter-spacing:16px; }
   .otp-input:focus{ outline:none; border-color:var(--yellow); box-shadow:0 0 0 4px rgba(255,198,41,.22); }
   .auth-step-hint b{ color:#fff; }
+  /* Sur les écrans d'inscription (fond clair), le numéro doit rester lisible. */
+  .screen .auth-step-hint b{ color:var(--text); }
 
   /* ---------- Reels (vidéos courtes publiées par les boutiques) ---------- */
   .reels-feed{ height:100%; overflow-y:auto; scroll-snap-type:y mandatory; -webkit-overflow-scrolling:touch; background:#000; }
@@ -982,6 +1011,20 @@
       </div>
       <button id="installBannerBtn" onclick="handleInstallClick()">Installer</button>
       <button class="close-x" onclick="dismissInstallBanner()">✕</button>
+    </div>
+
+    <div class="ios-sheet-overlay" id="iosSheet" onclick="closeIosSheet(event)">
+      <div class="ios-sheet">
+        <b class="ios-title">Installer Je Livre sur iPhone</b>
+        <div class="ios-warn" id="iosWarn" style="display:none">Vous êtes dans une autre application (Facebook, Instagram, TikTok…). Touchez les trois points ou l'icône boussole, puis « Ouvrir dans Safari », et suivez les étapes.</div>
+        <ol>
+          <li><span class="n">1</span><div>Ouvrez <b>jelivre.shop</b> dans <b>Safari</b>.</div></li>
+          <li><span class="n">2</span><div>Touchez le bouton <b>Partager</b> <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#0A84FF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M8 7l4-4 4 4"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg> (en bas de l'écran, ou en haut à droite sur iPad).</div></li>
+          <li><span class="n">3</span><div>Faites défiler le menu et touchez <b>« Sur l'écran d'accueil »</b>.</div></li>
+          <li><span class="n">4</span><div>Touchez <b>Ajouter</b>. L'icône Je Livre apparaît sur votre écran d'accueil.</div></li>
+        </ol>
+        <button class="ios-ok" onclick="closeIosSheet(event)">J'ai compris</button>
+      </div>
     </div>
 
     <!-- SCREENS -->
@@ -2043,6 +2086,41 @@
     databaseURL: "https://je-livre-509fd-default-rtdb.europe-west1.firebasedatabase.app",
   };
 
+  // ---- Notifications push (boutiques, livreurs, entreprises de livraison) ----
+  // Clé VAPID : Firebase Console → ⚙️ Paramètres du projet → Cloud Messaging
+  // → "Certificats Web Push" → générer une paire de clés → coller ici la
+  // valeur "Clé publique". Tant qu'elle n'est pas remplacée, les
+  // notifications restent simplement désactivées (rien ne casse).
+  const FCM_VAPID_KEY = 'À_REMPLACER_PAR_LA_CLÉ_VAPID';
+
+  // Associe chaque rôle au nœud Firebase où son jeton d'appareil est rangé
+  // (voir lib/notifyCore.js côté serveur, qui va le relire pour envoyer).
+  const FCM_COLLECTION_BY_ROLE = { shop: 'shops', driver: 'drivers', enterprise: 'enterprises' };
+
+  async function initPushNotifications(role, uid, dbForRole){
+    try {
+      if(FCM_VAPID_KEY === 'À_REMPLACER_PAR_LA_CLÉ_VAPID') return; // pas encore configuré
+      if(!uid || !('Notification' in window) || !('serviceWorker' in navigator) || typeof firebase === 'undefined') return;
+      const collection = FCM_COLLECTION_BY_ROLE[role];
+      if(!collection) return;
+      const permission = await Notification.requestPermission();
+      if(permission !== 'granted') return;
+      const reg = await navigator.serviceWorker.register('sw.js'); await navigator.serviceWorker.ready;
+      const messaging = firebase.messaging();
+      const token = await messaging.getToken({ vapidKey: FCM_VAPID_KEY, serviceWorkerRegistration: reg });
+      if(token) (dbForRole || firebase.database()).ref(collection + '/' + uid + '/fcmToken').set(token);
+      // Quand l'app est déjà ouverte au premier plan, le service worker ne
+      // prend pas le relais : on affiche nous-mêmes une petite alerte.
+      messaging.onMessage((payload) => {
+        const title = (payload.notification && payload.notification.title) || 'Je Livre';
+        const body = (payload.notification && payload.notification.body) || '';
+        alert(title + (body ? '\n' + body : ''));
+      });
+    } catch(e){
+      console.warn('[Je Livre] Notifications push non disponibles :', e.message);
+    }
+  }
+
   // ---- Serveur (paiement + vérification SMS), hébergé sur Vercel ----
   // Adresse de votre déploiement Vercel — à remplacer par la vraie une fois
   // déployé (visible dans le tableau de bord Vercel, ex. "je-livre-server.vercel.app").
@@ -2890,6 +2968,7 @@
         const data = snap.val();
         if(data && data.approved){
           window.currentVendorUser = { uid: user.uid, name: data.name || 'Ma boutique', category: data.category || '', phone: data.phone || '', hoursOpen: data.hoursOpen || null, hoursClose: data.hoursClose || null };
+          initPushNotifications('shop', user.uid, vendorDb);
         }
       });
     });
@@ -3166,6 +3245,7 @@
         const data = snap.val();
         if(data && data.approved){
           window.currentEntrepriseUser = { uid: user.uid, name: data.name || 'Mon entreprise', phone: data.phone || '', fleetCapacity: data.fleetCapacity || 10 };
+          initPushNotifications('enterprise', user.uid, entrepriseDb);
         }
       });
     });
@@ -3469,6 +3549,7 @@
         const data = snap.val();
         if(data && data.approved){
           window.currentDriverUser = { uid: user.uid, name: data.name || 'Livreur', phone: data.phone || '', vehicule: data.vehicle || 'Moto', available: data.available !== false, pendingCommission: data.pendingCommission || 0 };
+          initPushNotifications('driver', user.uid, driverDb);
         }
       });
     });
@@ -4027,6 +4108,7 @@
           return;
         }
         listenForDeliveryAssignment(requestId);
+        serverCallable(appAuth, 'notifyNearbyRequest')({ kind: 'delivery', requestId }).catch(() => {});
       }
     } catch (e) {
       console.warn('[Je Livre] Diffusion de la demande impossible :', e.message);
@@ -5876,6 +5958,12 @@
       for(const o of orders){
         await firebase.database().ref('marketplaceOrders/' + o.orderId).set(o);
         savedIds.push(o.orderId);
+        // Pas pour le paiement en ligne pré-payé : la commande reste invisible
+        // de la boutique tant que ce n'est pas réglé, la prévenir maintenant
+        // serait trompeur. Pour les autres modes, elle la voit tout de suite.
+        if(o.status !== 'awaiting_payment'){
+          serverCallable(appAuth, 'notifyShopNewOrder')({ orderId: o.orderId }).catch(() => {});
+        }
       }
     } catch(e){
       if(savedIds.length > 0){
@@ -6018,7 +6106,18 @@
     function onValue(snap){
       const p = snap.val();
       if(!p) return;
-      if(p.status === 'paid') finish('Paiement confirmé', isDelivery ? 'Votre livraison est en cours de recherche d\'un livreur.' : 'Votre commande a été transmise à la boutique.');
+      if(p.status === 'paid'){
+        finish('Paiement confirmé', isDelivery ? 'Votre livraison est en cours de recherche d\'un livreur.' : 'Votre commande a été transmise à la boutique.');
+        // Le paiement en ligne rendait la commande invisible de la boutique
+        // jusqu'ici (voir confirmMarketplaceOrder) — maintenant qu'elle est
+        // payée, c'est le bon moment pour la prévenir.
+        if(!isDelivery && Array.isArray(p.orderIds)){
+          p.orderIds.forEach((orderId) => { serverCallable(appAuth, 'notifyShopNewOrder')({ orderId }).catch(() => {}); });
+        }
+        if(isDelivery && p.requestId){
+          serverCallable(appAuth, 'notifyNearbyRequest')({ kind: 'delivery', requestId: p.requestId }).catch(() => {});
+        }
+      }
       else if(p.status === 'paid_needs_review') finish('Paiement reçu', 'Nous avons bien reçu votre paiement, mais ' + (isDelivery ? 'votre livraison' : 'votre commande') + ' demande une vérification. Le service client vous contactera.');
       else if(p.status === 'amount_mismatch') finish('Paiement à vérifier', 'Le montant reçu ne correspond pas à votre ' + (isDelivery ? 'demande' : 'commande') + '. Le service client va examiner votre paiement.');
       else if(p.status === 'failed' || p.status === 'failed_to_create') finish('Paiement non abouti', 'Le paiement n\'a pas abouti. ' + retryHint);
@@ -6181,7 +6280,9 @@
     vendorDb.ref('marketplaceOrders/' + orderId).once('value').then((snap) => {
       const o = snap.val();
       if(!o || o.status === 'cancelled'){ alert('Cette commande a été annulée par le client entre-temps.'); return; }
-      vendorDb.ref('marketplaceOrders/' + orderId).update({ status: 'pending_delivery' });
+      vendorDb.ref('marketplaceOrders/' + orderId).update({ status: 'pending_delivery' }).then(() => {
+        serverCallable(vendorAuth, 'notifyNearbyRequest')({ kind: 'order', requestId: orderId }).catch(() => {});
+      });
     });
   }
   window.confirmSellerOrder = confirmSellerOrder;
@@ -7475,85 +7576,115 @@
     window.newAddressCoords = { lat: place.lat, lng: place.lng };
   });
 
-  // ================= Installation PWA (écran d'accueil) =================
-  let deferredInstallPrompt = null;
+  // === INSTALL-PWA:START ===
+  // ================= Installation de l'app (PWA) =================
+  // Android / Chrome : vrai bouton « Installer ». iPhone : explications pas à pas.
+  // App Play Store (Capacitor) : aucune bannière, puisque l'app est déjà installée.
   const installBanner = document.getElementById('installBanner');
   const installTitle = document.getElementById('installBannerTitle');
   const installText = document.getElementById('installBannerText');
   const installBtn = document.getElementById('installBannerBtn');
+  const iosSheet = document.getElementById('iosSheet');
+  const UA = window.navigator.userAgent || '';
+  const DISMISS_KEY = 'je_livre_install_dismissed_at';
 
+  function isNativeApp(){ return !!window.__jlNative; }
   function isStandaloneMode(){
     return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   }
   function isIOS(){
-    return /iphone|ipad|ipod/i.test(window.navigator.userAgent);
+    return /iphone|ipad|ipod/i.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   }
+  function isAndroid(){ return /android/i.test(UA); }
+  // Navigateurs intégrés (Facebook, Instagram, TikTok…) : ils ne peuvent pas installer d'application.
+  function inAppBrowser(){ return /FBAN|FBAV|FB_IAB|Instagram|TikTok|musical_ly|Bytedance|Snapchat|MicroMessenger|; wv\)/i.test(UA); }
   function wasInstallDismissed(){
-    try { return sessionStorage.getItem('je_livre_install_dismissed') === '1'; } catch(e){ return false; }
+    try { const t = +localStorage.getItem(DISMISS_KEY) || 0; return Date.now() - t < 3 * 24 * 3600 * 1000; } catch(e){ return false; }
   }
   function markInstallDismissed(){
-    try { sessionStorage.setItem('je_livre_install_dismissed', '1'); } catch(e){ /* ignoré si indisponible */ }
+    try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch(e){ /* ignoré si indisponible */ }
   }
+  function showInstallBanner(title, text, btnLabel){
+    installTitle.textContent = title;
+    installText.textContent = text;
+    if(btnLabel){ installBtn.textContent = btnLabel; installBtn.style.display = 'inline-block'; }
+    else { installBtn.style.display = 'none'; }
+    installBanner.classList.add('show');
+  }
+  function hideInstallBanner(){ installBanner.classList.remove('show'); }
 
-  // Service worker : requis pour qu'Android propose l'installation, et permet
-  // un accès basique hors-ligne une fois l'app installée.
-  if('serviceWorker' in navigator){
+  // Service worker unique (installation + secours hors-ligne léger + notifications push).
+  if(!isNativeApp() && 'serviceWorker' in navigator && location.protocol !== 'file:'){
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').catch((e) => console.warn('[Je Livre] Service worker :', e.message));
     });
   }
 
-  if(!isStandaloneMode() && !wasInstallDismissed()){
-    if(isIOS()){
-      // Apple ne permet à aucun site d'installer automatiquement une PWA :
-      // on affiche donc les instructions manuelles à la place d'un bouton.
-      installTitle.textContent = "Installer Je Livre";
-      installText.textContent = "Appuyez sur Partager, puis \"Sur l'écran d'accueil\".";
-      installBtn.style.display = 'none';
-      installBanner.classList.add('show');
-    } else {
-      // Android/Chrome : on attend l'événement du navigateur pour proposer le vrai bouton.
-      window.addEventListener('beforeinstallprompt', (e) => {
-        e.preventDefault();
-        deferredInstallPrompt = e;
-        installTitle.textContent = 'Installer Je Livre';
-        installText.textContent = "Ajoutez l'app à votre écran d'accueil pour un accès rapide.";
-        installBtn.style.display = 'inline-block';
-        installBanner.classList.add('show');
-      });
-      // Repli : si le navigateur ne déclenche pas l'installation automatique (site pas encore
-      // hébergé en HTTPS, aperçu local, navigateur non-Chrome…), on affiche quand même le
-      // bandeau avec des instructions manuelles au lieu de ne rien montrer du tout.
-      setTimeout(() => {
-        if(!deferredInstallPrompt && !isStandaloneMode() && !wasInstallDismissed()){
-          installTitle.textContent = 'Installer Je Livre';
-          installText.textContent = "Ouvrez le menu ⋮ de votre navigateur, puis \"Installer l'application\".";
-          installBtn.style.display = 'none';
-          installBanner.classList.add('show');
-        }
-      }, 2500);
+  function offerInstall(){
+    if(isNativeApp() || isStandaloneMode() || wasInstallDismissed()) return;
+    if(window.__jlDeferred){
+      showInstallBanner('Installer Je Livre', "Ajoutez l'app à votre écran d'accueil : accès rapide, plein écran.", 'Installer');
+    } else if(isIOS()){
+      showInstallBanner('Installer Je Livre', "Sur iPhone : touchez Partager, puis « Sur l'écran d'accueil ».", 'Comment faire ?');
+    } else if(isAndroid() && inAppBrowser()){
+      showInstallBanner('Ouvrez dans Chrome', "Ce navigateur ne peut pas installer l'app. Copiez le lien et ouvrez-le dans Chrome.", 'Copier le lien');
     }
   }
+  window.addEventListener('jl-install-ready', offerInstall);
+  offerInstall();
+  // Android sans invite automatique (navigateur non compatible…) : mode d'emploi manuel.
+  setTimeout(() => {
+    if(!installBanner.classList.contains('show') && isAndroid() && !isNativeApp() && !isStandaloneMode() && !wasInstallDismissed()){
+      showInstallBanner('Installer Je Livre', "Menu ⋮ du navigateur, puis « Installer l'application » ou « Ajouter à l'écran d'accueil ».", null);
+    }
+  }, 3500);
+
+  function copyInstallLink(){
+    const url = location.origin + location.pathname;
+    const done = () => { installBtn.textContent = 'Lien copié'; };
+    const fallback = () => {
+      const t = document.createElement('textarea'); t.value = url; document.body.appendChild(t); t.select();
+      try { document.execCommand('copy'); done(); } catch(e){ /* ignoré */ }
+      t.remove();
+    };
+    try { navigator.clipboard.writeText(url).then(done, fallback); } catch(e){ fallback(); }
+  }
+  function openIosSheet(){
+    document.getElementById('iosWarn').style.display = inAppBrowser() ? 'block' : 'none';
+    iosSheet.classList.add('show');
+  }
+  function closeIosSheet(e){
+    if(e && e.target && e.target !== iosSheet && !e.target.classList.contains('ios-ok')) return;
+    iosSheet.classList.remove('show');
+  }
+  window.closeIosSheet = closeIosSheet;
 
   function handleInstallClick(){
-    if(!deferredInstallPrompt) return;
-    deferredInstallPrompt.prompt();
-    deferredInstallPrompt.userChoice.then(() => {
-      deferredInstallPrompt = null;
-      installBanner.classList.remove('show');
-    });
+    const p = window.__jlDeferred;
+    if(p){
+      p.prompt();
+      Promise.resolve(p.userChoice).then((r) => {
+        window.__jlDeferred = null; hideInstallBanner();
+        if(!r || r.outcome !== 'accepted') markInstallDismissed();
+      });
+      return;
+    }
+    if(isIOS()){ openIosSheet(); return; }
+    if(inAppBrowser()){ copyInstallLink(); return; }
   }
   window.handleInstallClick = handleInstallClick;
 
   function dismissInstallBanner(){
-    installBanner.classList.remove('show');
+    hideInstallBanner();
     markInstallDismissed();
   }
   window.dismissInstallBanner = dismissInstallBanner;
 
   window.addEventListener('appinstalled', () => {
-    installBanner.classList.remove('show');
+    window.__jlDeferred = null;
+    hideInstallBanner();
   });
+  // === INSTALL-PWA:END ===
 </script>
 </body>
 </html>
