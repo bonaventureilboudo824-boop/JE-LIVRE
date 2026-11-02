@@ -1759,7 +1759,21 @@
         <div id="commissionBanner" style="display:none;margin-top:14px;background:#FBEAEA;border:1px solid #F3C6C6;border-radius:var(--radius-md);padding:14px">
           <b style="color:#B3261E">Commission due : <span id="commissionAmount">0 F</span></b>
           <p class="section-sub" style="margin-top:4px">100 F par colis en Express/Groupée, 10 % du prix en Livraison simple payée cash. Réglez-la pour pouvoir accepter une nouvelle course.</p>
+          <p id="commissionCoverNote" class="section-sub" style="display:none;margin-top:6px;color:#1E7B34;font-weight:600"></p>
           <button class="btn btn-black" style="margin-top:8px;padding:10px" onclick="payCommission()">J'ai payé ma commission</button>
+        </div>
+        <div id="commissionWallet" style="margin-top:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+            <span style="font-size:13px;color:var(--text-soft)">Solde de commission (garantie)</span>
+            <b id="commissionBalance" style="font-family:'Barlow Condensed',sans-serif;font-size:24px">0 F</b>
+          </div>
+          <p class="section-sub">Rechargez ce solde : tant qu'il couvre votre commission en attente, vous pouvez accepter d'autres livraisons sans la régler à chaque fois. Il peut aussi servir à la payer. Vous pouvez toujours la payer vous-même, comme avant.</p>
+          <button class="btn btn-yellow" style="margin-top:8px;padding:10px" onclick="topUpCommission()">Recharger mon solde</button>
+          <button id="payFromBalanceBtn" class="btn btn-black" style="display:none;margin-top:8px;padding:10px" onclick="payCommissionFromBalance()">Payer ma commission avec mon solde</button>
+          <label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:13px;color:var(--text-soft)">
+            <input type="checkbox" id="commissionAutoPay" onchange="setCommissionAutoPay(this.checked)" style="margin-top:3px">
+            <span>Prélever automatiquement ma commission sur ce solde dès qu'elle est due (j'autorise ce prélèvement).</span>
+          </label>
         </div>
         <div class="stat-row" style="margin-top:14px">
           <div class="stat-card" style="flex:1"><span>Solde disponible</span><b id="driverEarningsBalance">0 F</b></div>
@@ -2285,44 +2299,30 @@
       if(!amountStr) return;
       const amount = parseInt(amountStr, 10);
       if(!amount || amount <= 0 || amount > available){ alert('Montant invalide.'); return; }
+      if(amount < 100){ alert('Le retrait minimum est de 100 F.'); return; }
       const phone = prompt('Numéro Mobile Money pour recevoir ce retrait :', window.currentAppUser.phone || '');
       if(!phone) return;
-      const withdrawalId = 'w_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      firebase.database().ref('withdrawalRequests/' + withdrawalId).set({
-        clientUid: window.currentAppUser.uid,
-        shopName: 'Parrainage — ' + (window.currentAppUser.name || ''),
-        amount, phone,
-        status: 'pending',
-        requestedAt: firebase.database.ServerValue.TIMESTAMP,
-      }).then(() => {
-        alert('Demande de retrait envoyée. Elle sera traitée par notre équipe sous peu.');
-      }).catch((e) => alert('Erreur : ' + e.message));
+      // C'est le SERVEUR qui débite le solde et crée la demande (avant, le solde n'était jamais débité).
+      serverCallable(appAuth, 'requestReferralWithdrawal')({ amount, phone })
+        .then(() => {
+          alert('Demande de retrait envoyée : ' + formatFCFA(amount) + ' ont été déduits de votre solde. Elle sera traitée par notre équipe sous peu.');
+          const balEl = document.getElementById('referralBalance');
+          if(balEl) balEl.textContent = formatFCFA(Math.max(0, available - amount));
+        })
+        .catch((e) => alert('Erreur : ' + e.message));
     });
   }
   window.requestReferralWithdrawal = requestReferralWithdrawal;
 
-  // Crédite 25 F au parrain d'une personne, une fois une livraison/commande
-  // réellement terminée. "referredBy" est capturé dès la création de la
-  // demande/commande (voir confirmDelivery / confirmMarketplaceOrder), donc
-  // aucune lecture croisée n'est nécessaire ici — seule l'écriture du crédit
-  // lui-même l'est (voir database.rules.json : champs dédiés en écriture
-  // libre pour tout compte connecté, même limitation de confiance que le
-  // reste des montants calculés côté app).
-  const REFERRAL_VALID_MS = 2 * 365 * 24 * 60 * 60 * 1000; // 2 ans
-  function creditReferralReward(referrerUid, referredAt){
-    if(!referrerUid || typeof firebase === 'undefined') return;
-    if(referredAt && (Date.now() - referredAt) > REFERRAL_VALID_MS) return; // parrainage expiré (plus de 2 ans)
-    firebase.database().ref('users/' + referrerUid).update({
-      referralBalance: firebase.database.ServerValue.increment(25),
-      referralCount: firebase.database.ServerValue.increment(1),
-    }).then(() => {
-      // Les 25 F versés au parrain sont imputés sur les commissions de la
-      // plateforme (pas un coût en plus) : on les enregistre séparément pour
-      // que l'admin voie une commission nette, après reversement.
-      firebase.database().ref('platformStats').update({
-        referralPayouts: firebase.database.ServerValue.increment(25),
-      });
-    }).catch((e) => console.warn('[Je Livre] Crédit de parrainage impossible :', e.message));
+  // Demande au SERVEUR de créditer le parrain (25 F par commande ou livraison terminée).
+  // L'application n'écrit plus jamais le solde de parrainage : le serveur lit lui-même
+  // le parrain dans le profil de la boutique ou du client (pas dans la commande), vérifie
+  // que la commande est bien terminée (et payée en ligne le cas échéant), et ne crédite
+  // qu'une seule fois par commande. Voir database.rules.json (champs verrouillés).
+  function requestReferralCredit(authInstance, kind, id){
+    if(!id || !authInstance || typeof firebase === 'undefined') return;
+    serverCallable(authInstance, 'creditReferral')({ kind, id })
+      .catch((e) => console.warn('[Je Livre] Crédit de parrainage impossible :', e.message));
   }
 
   function recordPlatformCommission(field, amount){
@@ -2588,7 +2588,9 @@
     rebuildCatalog(); // repart des seules données de démonstration
   }
 
+  let driverCommissionRefs = [];
   function resetDriverSession(){
+    stopDriverCommissionListeners();
     offRef(deliveryReqRef); deliveryReqRef = null;
     offRef(marketplaceReqRef); marketplaceReqRef = null;
     seenDeliveryReqIds = null; seenMarketplaceReqIds = null;
@@ -2641,7 +2643,7 @@
         loadRealAds();
         renderAppNotifications();
       }
-      if(window.pendingPaymentReturnTx){
+      if(window.pendingPaymentReturnTx && !isTopupReturn()){
         const tx = window.pendingPaymentReturnTx;
         window.pendingPaymentReturnTx = null;
         handlePaymentReturn(tx);
@@ -3431,6 +3433,7 @@
           return;
         }
         window.currentDriverUser = { uid: user.uid, name: data.name || 'Livreur', phone: data.phone || '', vehicule: data.vehicle || 'Moto', available: data.available !== false, pendingCommission: data.pendingCommission || 0 };
+        stopDriverCommissionListeners(); listenDriverCommission();
         closeDriverLogin();
         document.getElementById('driverAuthViewLogin').style.display = 'block';
         document.getElementById('driverAuthViewPending').style.display = 'none';
@@ -3549,7 +3552,9 @@
         const data = snap.val();
         if(data && data.approved){
           window.currentDriverUser = { uid: user.uid, name: data.name || 'Livreur', phone: data.phone || '', vehicule: data.vehicle || 'Moto', available: data.available !== false, pendingCommission: data.pendingCommission || 0 };
+          stopDriverCommissionListeners(); listenDriverCommission();
           initPushNotifications('driver', user.uid, driverDb);
+          if(isTopupReturn()){ const tx = window.pendingPaymentReturnTx; window.pendingPaymentReturnTx = null; handleCommissionTopupReturn(tx); }
         }
       });
     });
@@ -3567,14 +3572,43 @@
   // "remittances" (d'avant ce changement) restent consultables depuis la
   // console Firebase si besoin, mais ne sont plus affichées ici.
 
+  // La commission due est « couverte » quand le solde de commission (garantie)
+  // suffit à la payer : le livreur n'est alors pas bloqué pour accepter une course.
+  function driverCommissionCovered(){
+    const d = window.currentDriverUser; if(!d) return false;
+    return (d.pendingCommission || 0) <= (d.commissionBalance || 0);
+  }
+  function driverBlockedByCommission(){
+    const d = window.currentDriverUser; if(!d) return false;
+    return (d.pendingCommission || 0) > 0 && !driverCommissionCovered();
+  }
+  function commissionBlockMessage(){
+    const d = window.currentDriverUser || {};
+    return 'Votre commission en attente (' + formatFCFA(d.pendingCommission || 0) + ') dépasse votre solde de commission (' + formatFCFA(d.commissionBalance || 0) + '). Rechargez votre solde ou réglez votre commission pour accepter une nouvelle livraison.';
+  }
+
   function renderCommissionBanner(){
+    const d = window.currentDriverUser;
+    if(!d) return;
+    const owed = d.pendingCommission || 0, balance = d.commissionBalance || 0;
+    const balEl = document.getElementById('commissionBalance'); if(balEl) balEl.textContent = formatFCFA(balance);
+    const autoEl = document.getElementById('commissionAutoPay'); if(autoEl) autoEl.checked = !!d.commissionAutoPay;
+    const payBtn = document.getElementById('payFromBalanceBtn'); if(payBtn) payBtn.style.display = (owed > 0 && balance > 0) ? 'block' : 'none';
     const banner = document.getElementById('commissionBanner');
     const amountEl = document.getElementById('commissionAmount');
-    if(!banner || !window.currentDriverUser) return;
-    const owed = window.currentDriverUser.pendingCommission || 0;
+    if(!banner) return;
     if(owed > 0){
+      const covered = balance >= owed;
       banner.style.display = 'block';
+      banner.style.background = covered ? '#EAF6EC' : '#FBEAEA';
+      banner.style.borderColor = covered ? '#BFE2C5' : '#F3C6C6';
+      const title = banner.querySelector('b'); if(title) title.style.color = covered ? '#1E7B34' : '#B3261E';
       if(amountEl) amountEl.textContent = formatFCFA(owed);
+      const note = document.getElementById('commissionCoverNote');
+      if(note){
+        note.style.display = covered ? 'block' : 'none';
+        note.textContent = covered ? 'Votre solde de commission couvre cette commission : vous pouvez continuer à accepter des livraisons.' : '';
+      }
     } else {
       banner.style.display = 'none';
     }
@@ -3599,6 +3633,124 @@
     }).catch((e) => alert('Erreur : ' + e.message));
   }
   window.payCommission = payCommission;
+
+  // ---- Solde de commission (garantie) : écouteurs temps réel ----
+  function listenDriverCommission(){
+    const d = window.currentDriverUser;
+    if(!d || typeof firebase === 'undefined' || driverCommissionRefs.length) return;
+    const pend = driverDb.ref('drivers/' + d.uid + '/pendingCommission');
+    const wal = driverDb.ref('driverWallets/' + d.uid);
+    pend.on('value', (snap) => {
+      if(window.currentDriverUser){ window.currentDriverUser.pendingCommission = snap.val() || 0; renderCommissionBanner(); }
+    }, () => {});
+    wal.on('value', (snap) => {
+      const w = snap.val() || {};
+      if(window.currentDriverUser){
+        window.currentDriverUser.commissionBalance = w.commissionBalance || 0;
+        window.currentDriverUser.commissionAutoPay = w.autoPay === true;
+        renderCommissionBanner();
+      }
+    }, () => {});
+    driverCommissionRefs = [pend, wal];
+  }
+  function stopDriverCommissionListeners(){
+    driverCommissionRefs.forEach(offRef); driverCommissionRefs = [];
+  }
+
+  // ---- Recharger le solde par paiement en ligne (vérifié par le serveur) ----
+  async function topUpCommission(){
+    if(!window.currentDriverUser) return;
+    if(!PAYMENTS.enabled){ alert('Le paiement en ligne n\'est pas encore disponible.'); return; }
+    const raw = prompt('Montant à ajouter à votre solde de commission (FCFA, de 500 à 200 000) :', '5000');
+    if(!raw) return;
+    const amount = parseInt(String(raw).replace(/\s/g, ''), 10);
+    if(!amount || amount < 500 || amount > 200000){ alert('Montant invalide : entre 500 et 200 000 F.'); return; }
+    showPayOverlay('Préparation du paiement…', 'Ne fermez pas cette page.', false);
+    try {
+      const res = await serverCallable(driverAuth, 'createPayment')({ commissionTopup: amount });
+      const data = res && res.data ? res.data : {};
+      if(!data.paymentUrl) throw new Error('no-url');
+      try {
+        sessionStorage.setItem('je_livre_pending_tx', data.txId);
+        sessionStorage.setItem('je_livre_pending_tx_kind', 'commissionTopup');
+      } catch(e){ /* ignoré */ }
+      showPayOverlay('Redirection…', 'Vous allez être redirigé vers la page de paiement sécurisée.', false);
+      window.location.href = data.paymentUrl;
+    } catch(e){
+      closePayOverlay();
+      const code = e && e.code ? String(e.code) : '';
+      alert(code === 'unavailable' ? 'Impossible de joindre le service de paiement. Vérifiez votre connexion et réessayez.'
+        : (code === 'internal' || !e || !e.message) ? 'Le paiement est momentanément indisponible. Réessayez dans un instant.' : e.message);
+    }
+  }
+  window.topUpCommission = topUpCommission;
+
+  // Retour de la page de paiement pour une recharge : on attend la confirmation du serveur,
+  // on ne croit jamais l'adresse de retour seule.
+  function isTopupReturn(){
+    try {
+      return !!window.pendingPaymentReturnTx
+        && sessionStorage.getItem('je_livre_pending_tx_kind') === 'commissionTopup'
+        && sessionStorage.getItem('je_livre_pending_tx') === window.pendingPaymentReturnTx;
+    } catch(e){ return false; }
+  }
+  function handleCommissionTopupReturn(txId){
+    if(!txId || typeof firebase === 'undefined') return;
+    showPayOverlay('Vérification de la recharge…', 'Nous attendons la confirmation de votre paiement.', false);
+    const ref = driverDb.ref('payments/' + txId);
+    let done = false, timer = null;
+    const after = () => { try { go('dashboard-livreur'); } catch(e){ /* ignoré */ } };
+    function finish(title, msg){
+      if(done) return; done = true;
+      clearTimeout(timer); ref.off('value', onValue);
+      payOverlayAfterClose = after;
+      showPayOverlay(title, msg, true);
+    }
+    function onValue(snap){
+      const p = snap.val();
+      if(!p) return;
+      if(p.status === 'paid') finish('Recharge confirmée', formatFCFA(p.amount) + ' ont été ajoutés à votre solde de commission.');
+      else if(p.status === 'amount_mismatch') finish('Paiement à vérifier', 'Le montant reçu ne correspond pas à votre recharge. Le service client va la vérifier.');
+      else if(p.status === 'failed' || p.status === 'failed_to_create') finish('Paiement non abouti', 'Le paiement n\'a pas abouti. Vous pouvez réessayer.');
+    }
+    timer = setTimeout(() => finish('Recharge en cours de vérification', 'Nous n\'avons pas encore reçu la confirmation. Votre solde sera crédité automatiquement dès que le paiement sera confirmé.'), 90000);
+    ref.on('value', onValue, () => finish('Recharge en cours de vérification', 'Votre solde sera crédité dès que le paiement sera confirmé.'));
+  }
+
+  // ---- Payer la commission avec le solde (sur autorisation du livreur) ----
+  async function payCommissionFromBalance(){
+    const d = window.currentDriverUser;
+    if(!d || !(d.pendingCommission > 0)) return;
+    const can = Math.min(d.pendingCommission, d.commissionBalance || 0);
+    if(can <= 0){ alert('Votre solde de commission est vide. Rechargez-le d\'abord.'); return; }
+    if(!confirm('Payer ' + formatFCFA(can) + ' de commission avec votre solde de commission ?')) return;
+    try {
+      const res = await serverCallable(driverAuth, 'payCommissionFromBalance')({});
+      const out = (res && res.data) || {};
+      alert('Commission payée : ' + formatFCFA(out.paid || can) + '. ' + ((out.pendingLeft || 0) > 0 ? 'Il vous reste ' + formatFCFA(out.pendingLeft) + ' à régler.' : 'Vous n\'avez plus de commission en attente.'));
+    } catch(e){
+      alert(e && e.message ? e.message : 'Impossible de payer la commission pour le moment.');
+    }
+  }
+  window.payCommissionFromBalance = payCommissionFromBalance;
+
+  // Prélèvement automatique : uniquement si le livreur l'a autorisé.
+  function maybeAutoPayCommission(){
+    const d = window.currentDriverUser;
+    if(!d || !d.commissionAutoPay || !((d.commissionBalance || 0) > 0)) return;
+    serverCallable(driverAuth, 'payCommissionFromBalance')({})
+      .catch((e) => console.warn('[Je Livre] Prélèvement automatique impossible :', e.message));
+  }
+  function setCommissionAutoPay(on){
+    const d = window.currentDriverUser; if(!d) return;
+    if(on && (d.pendingCommission || 0) > 0 && !confirm('Activer le prélèvement automatique ? Votre commission en attente (' + formatFCFA(d.pendingCommission) + ') sera aussi prélevée maintenant sur votre solde.')){
+      renderCommissionBanner(); return;
+    }
+    driverDb.ref('driverWallets/' + d.uid + '/autoPay').set(!!on)
+      .then(() => { if(on) { d.commissionAutoPay = true; maybeAutoPayCommission(); } })
+      .catch((e) => { alert('Erreur : ' + e.message); renderCommissionBanner(); });
+  }
+  window.setCommissionAutoPay = setCommissionAutoPay;
 
   function loadDriverStats(){
     const countEl = document.getElementById('driverStatCount');
@@ -4455,7 +4607,7 @@
           if(dot) dot.style.background = window.driverAvailable ? '#3EAF4C' : '#B9B7B0';
         }
       }
-      listenMarketplaceRequests(); listenDeliveryRequests(); loadDriverStats(); renderCommissionBanner(); loadDriverEarningsBalance();
+      listenMarketplaceRequests(); listenDeliveryRequests(); loadDriverStats(); listenDriverCommission(); renderCommissionBanner(); loadDriverEarningsBalance();
     }
     if (current === 'course-active') { renderCourseMap(); }
     if (current === 'dashboard-entreprise') { listenFleet(); renderFleet(); renderFleetMap(); }
@@ -6420,8 +6572,8 @@
 
   function acceptDeliveryRequest(id){
     if (typeof firebase === 'undefined' || !window.currentDriverUser) return;
-    if (window.currentDriverUser.pendingCommission > 0){
-      alert('Vous devez régler votre commission en attente (' + formatFCFA(window.currentDriverUser.pendingCommission) + ') avant de pouvoir accepter une nouvelle livraison.');
+    if (driverBlockedByCommission()){
+      alert(commissionBlockMessage());
       return;
     }
     const driver = window.currentDriverUser;
@@ -6522,8 +6674,8 @@
 
   function acceptMarketplaceOrder(orderId){
     if(typeof firebase === 'undefined' || !window.currentDriverUser) return;
-    if (window.currentDriverUser.pendingCommission > 0){
-      alert('Vous devez régler votre commission en attente (' + formatFCFA(window.currentDriverUser.pendingCommission) + ') avant de pouvoir accepter une nouvelle livraison.');
+    if (driverBlockedByCommission()){
+      alert(commissionBlockMessage());
       return;
     }
     const driver = window.currentDriverUser;
@@ -7329,7 +7481,7 @@
       if(!cached) return;
       if(cached.status === 'completed'){ renderMyOrders(); return; } // déjà confirmée (double-clic, etc.) : on ne rejoue pas les effets
       return ref.update({ status: 'completed', receivedAt: firebase.database.ServerValue.TIMESTAMP }).then(() => {
-        if(cached.shopReferredBy) creditReferralReward(cached.shopReferredBy, cached.shopReferredAt);
+        if(cached.shopReferredBy) requestReferralCredit(appAuth, 'marketplaceOrders', orderId);
         recordPlatformCommission('commissionSimple', (cached.deliveryFee || 0) * 0.10);
         // Cette fonction n'est plus atteinte que par les commandes payées
         // D'AVANCE en ligne (celles payées à la remise se terminent via le
@@ -7392,8 +7544,9 @@
     if(c.settled) return; // déjà traité (double-tap sur le bouton) : on ne rejoue pas les effets
     c.settled = true;
     if(c.source === 'deliveryRequests'){
-      driverDb.ref('deliveryRequests/' + c.requestId).update({ status: 'completed', completedAt: firebase.database.ServerValue.TIMESTAMP });
-      if(c.referredBy) creditReferralReward(c.referredBy, c.referredAt);
+      // On attend que la fin de livraison soit bien enregistrée avant de demander le crédit au serveur.
+      driverDb.ref('deliveryRequests/' + c.requestId).update({ status: 'completed', completedAt: firebase.database.ServerValue.TIMESTAMP })
+        .then(() => { if(c.referredBy) requestReferralCredit(driverAuth, 'deliveryRequests', c.requestId); });
       const isSimple = c.deliveryType !== 'express' && c.deliveryType !== 'groupee';
       if(isSimple){
         recordPlatformCommission('commissionSimple', (c.price || 0) * 0.10);
@@ -7407,7 +7560,7 @@
           window.currentDriverUser.pendingCommission = (window.currentDriverUser.pendingCommission || 0) + owed;
           driverDb.ref('drivers/' + window.currentDriverUser.uid).update({
             pendingCommission: firebase.database.ServerValue.increment(owed),
-          });
+          }).then(maybeAutoPayCommission);
           renderCommissionBanner();
         }
       }
@@ -7430,7 +7583,7 @@
         window.currentDriverUser.pendingCommission = (window.currentDriverUser.pendingCommission || 0) + owed;
         driverDb.ref('drivers/' + window.currentDriverUser.uid).update({
           pendingCommission: firebase.database.ServerValue.increment(owed),
-        });
+        }).then(maybeAutoPayCommission);
         renderCommissionBanner();
       }
     } else if(c.orderId){
