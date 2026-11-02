@@ -222,6 +222,7 @@
           <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="truck"></i></div></div><b id="kpiCommissionFlat">—</b><span>Commission fixe (Express/Groupée)</span></div>
           <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="gift"></i></div></div><b id="kpiReferralPayouts">—</b><span>Reversé aux parrains</span></div>
           <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="trending-up"></i></div></div><b id="kpiCommissionNet">—</b><span>Commission nette</span></div>
+          <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="shield"></i></div></div><b id="kpiDriverGuarantees">—</b><span>Garanties livreurs détenues (argent des livreurs, pas un revenu)</span></div>
         </div>
       </div>
       <div class="panel">
@@ -1031,7 +1032,10 @@
         <td><span class="pill ${w.status === 'paid' ? 'approved' : w.status === 'rejected' ? 'rejected' : 'pending'}">${statusLabels[w.status] || w.status}</span>${w.lastError ? `<br><span style="font-size:11px;color:#B3261E">${escapeHtml(w.lastError)}</span>` : ''}</td>
         <td>${timeAgo(w.requestedAt)}</td>
         <td style="text-align:right; white-space:nowrap;">
-          ${w.status === 'pending' && w.kind === 'driver' ? `
+          ${w.status === 'pending' && (w.kind === 'referral' || (!w.kind && w.clientUid)) ? `
+            <button class="btn btn-outline btn-sm" onclick="decideReferralWithdrawal('${id}','rejected', this)">Refuser et rembourser</button>
+            <button class="btn btn-yellow btn-sm" onclick="decideReferralWithdrawal('${id}','paid', this)">Marquer comme versé</button>
+          ` : w.status === 'pending' && w.kind === 'driver' ? `
             <button class="btn btn-outline btn-sm" onclick="setWithdrawalStatus('${id}','rejected')">Refuser</button>
             <button class="btn btn-yellow btn-sm" onclick="triggerDriverPayout('${id}', this)">Approuver et virer</button>
           ` : w.status === 'pending' ? `
@@ -1048,6 +1052,35 @@
     db.ref('withdrawalRequests/' + id).update({ status, processedAt: firebase.database.ServerValue.TIMESTAMP });
   }
   window.setWithdrawalStatus = setWithdrawalStatus;
+
+  // Retraits de PARRAINAGE : la décision passe par le serveur. Le solde du parrain a déjà été
+  // débité à la demande ; un refus le rembourse, un « versé » n'enlève rien de plus. Payez
+  // d'abord le Mobile Money à la main, puis cliquez sur « Marquer comme versé ».
+  async function decideReferralWithdrawal(id, decision, btnEl){
+    if(!auth || !auth.currentUser) return;
+    const w = allWithdrawals[id] || {};
+    const msg = decision === 'paid'
+      ? 'Confirmez-vous avoir DÉJÀ envoyé ' + formatFCFA(w.amount) + ' en Mobile Money au ' + (w.phone || '—') + ' ?'
+      : 'Refuser cette demande ? Les ' + formatFCFA(w.amount) + ' seront remboursés sur le solde de parrainage.';
+    if(!confirm(msg)) return;
+    if(btnEl){ btnEl.disabled = true; }
+    try {
+      const token = await auth.currentUser.getIdToken();
+      const res = await fetch(SERVER_BASE_URL + '/api/decideReferralWithdrawal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        body: JSON.stringify({ withdrawalId: id, decision }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if(!res.ok){ alert('Échec : ' + (body.message || ('erreur HTTP ' + res.status))); }
+      else if(decision === 'rejected'){ alert('Demande refusée et solde remboursé.'); }
+    } catch(e){
+      alert('Erreur : ' + e.message);
+    } finally {
+      if(btnEl){ btnEl.disabled = false; }
+    }
+  }
+  window.decideReferralWithdrawal = decideReferralWithdrawal;
 
   // Adresse de votre déploiement Vercel — même valeur que dans je-livre-prototype.html.
   const SERVER_BASE_URL = 'https://je-livre-server.vercel.app';
@@ -1088,10 +1121,13 @@
       const flatEl = document.getElementById('kpiCommissionFlat');
       const payoutsEl = document.getElementById('kpiReferralPayouts');
       const netEl = document.getElementById('kpiCommissionNet');
+      const guaranteeEl = document.getElementById('kpiDriverGuarantees');
       if(simpleEl) simpleEl.textContent = formatFCFA(simple);
       if(flatEl) flatEl.textContent = formatFCFA(flat);
       if(payoutsEl) payoutsEl.textContent = '− ' + formatFCFA(payouts);
       if(netEl) netEl.textContent = formatFCFA(simple + flat - payouts);
+      // Soldes de commission rechargés par les livreurs, moins ce qui a déjà servi à payer leur commission.
+      if(guaranteeEl) guaranteeEl.textContent = formatFCFA(Math.max(0, (s.commissionTopups || 0) - (s.commissionFromBalance || 0)));
     });
   }
 
