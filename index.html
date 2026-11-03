@@ -2020,10 +2020,18 @@
         <button class="btn btn-yellow" style="margin-top:12px" onclick="shareReferralLink()"><i data-feather="share-2" style="width:15px;height:15px"></i>Partager mon lien</button>
         <button class="btn btn-outline" style="margin-top:8px" onclick="copyReferralLink()"><i data-feather="copy" style="width:15px;height:15px"></i>Copier le lien</button>
         <div class="shop-stats-row" style="margin-top:18px">
-          <div class="stat"><b id="referralCount">0</b><span>Filleuls actifs</span></div>
+          <div class="stat"><b id="referralCount">0</b><span>Filleuls</span></div>
           <div class="stat"><b id="referralBalance">0 F</b><span>Solde disponible</span></div>
         </div>
+        <p id="referralCreditsNote" class="section-sub" style="margin-top:8px">Aucune commande ou livraison rémunérée pour le moment.</p>
         <button class="btn btn-outline" style="margin-top:12px" onclick="requestReferralWithdrawal()">Demander un retrait</button>
+        <div id="referralPushCard" style="display:none;margin-top:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px">
+          <b>Soyez prévenu</b>
+          <p class="section-sub">Recevez une notification quand une personne s'inscrit avec votre code, et à chaque fois que vous gagnez 25 F.</p>
+          <button class="btn btn-yellow" style="margin-top:8px;padding:10px" onclick="enableReferralPush()">Activer les notifications</button>
+        </div>
+        <b style="display:block;margin-top:20px">Mes filleuls</b>
+        <div id="referralList"><p class="section-sub">Aucun filleul pour le moment. Partagez votre lien !</p></div>
       </div>
 
       <!-- MES COMMANDES (marketplace) -->
@@ -2105,19 +2113,57 @@
   // → "Certificats Web Push" → générer une paire de clés → coller ici la
   // valeur "Clé publique". Tant qu'elle n'est pas remplacée, les
   // notifications restent simplement désactivées (rien ne casse).
-  const FCM_VAPID_KEY = 'À_REMPLACER_PAR_LA_CLÉ_VAPID';
+  const FCM_VAPID_KEY = 'BHw4drvIUuNQhJeD63ebNnMQSkNDaBhmM4FuwIMQ-oaadzdVFg0Z0mbBH7lKJo2BIqFmIpcy7o0tZHQxT7IukyU';
 
   // Associe chaque rôle au nœud Firebase où son jeton d'appareil est rangé
   // (voir lib/notifyCore.js côté serveur, qui va le relire pour envoyer).
-  const FCM_COLLECTION_BY_ROLE = { shop: 'shops', driver: 'drivers', enterprise: 'enterprises' };
+  const FCM_COLLECTION_BY_ROLE = { shop: 'shops', driver: 'drivers', enterprise: 'enterprises', client: 'users' };
 
-  async function initPushNotifications(role, uid, dbForRole){
+  // Application Android (Capacitor) : le navigateur intégré ne sait pas faire les
+  // notifications web, on passe donc par le plugin natif Firebase (voir package.json
+  // et android/app/google-services.json dans le dépôt de l'application).
+  async function initNativePush(role, uid, dbForRole, prompt = true){
     try {
+      const PN = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
+      const collection = FCM_COLLECTION_BY_ROLE[role];
+      if(!PN || !uid || !collection) return;
+      let perm = await PN.checkPermissions();
+      if(perm.receive === 'prompt' || perm.receive === 'prompt-with-rationale'){
+        if(!prompt) return; // pas de question tant que la personne n'a pas demandé les notifications
+        perm = await PN.requestPermissions();
+      }
+      if(perm.receive !== 'granted') return;
+      // Canal d'alerte à forte importance (son + bandeau), utilisé par défaut (voir AndroidManifest.xml).
+      try { await PN.createChannel({ id: 'jl_alerts', name: 'Alertes Je Livre', description: 'Nouvelles commandes et demandes de livraison', importance: 5, visibility: 1, vibration: true }); } catch(e){ /* ignoré */ }
+      await PN.removeAllListeners(); // évite les doublons si on se reconnecte
+      await PN.addListener('registration', (t) => {
+        if(t && t.value) (dbForRole || firebase.database()).ref(collection + '/' + uid + '/fcmToken').set(t.value);
+      });
+      await PN.addListener('registrationError', (e) => console.warn('[Je Livre] Enregistrement des notifications impossible :', e && e.error));
+      await PN.addListener('pushNotificationReceived', (n) => {
+        alert((n.title || 'Je Livre') + (n.body ? '\n' + n.body : ''));
+      });
+      await PN.register();
+    } catch(e){
+      console.warn('[Je Livre] Notifications natives non disponibles :', e.message);
+    }
+  }
+
+  // opts.prompt = false : on enregistre l'appareil seulement si l'autorisation est DÉJÀ accordée,
+  // sans poser la question (utilisé pour les clients, qui l'activent depuis l'écran de parrainage).
+  async function initPushNotifications(role, uid, dbForRole, opts){
+    const prompt = !opts || opts.prompt !== false;
+    try {
+      if(isNativeApp()){ await initNativePush(role, uid, dbForRole, prompt); return; }
       if(FCM_VAPID_KEY === 'À_REMPLACER_PAR_LA_CLÉ_VAPID') return; // pas encore configuré
       if(!uid || !('Notification' in window) || !('serviceWorker' in navigator) || typeof firebase === 'undefined') return;
       const collection = FCM_COLLECTION_BY_ROLE[role];
       if(!collection) return;
-      const permission = await Notification.requestPermission();
+      let permission = Notification.permission;
+      if(permission === 'default'){
+        if(!prompt) return;
+        permission = await Notification.requestPermission();
+      }
       if(permission !== 'granted') return;
       const reg = await navigator.serviceWorker.register('sw.js'); await navigator.serviceWorker.ready;
       const messaging = firebase.messaging();
@@ -2254,21 +2300,81 @@
     });
   }
 
+  let referralRefs = [];
+  function stopReferralListeners(){ referralRefs.forEach(offRef); referralRefs = []; }
+
+  // Écran de parrainage EN DIRECT : solde, nombre de filleuls et liste se mettent à jour
+  // tout seuls (inscription d'un filleul, crédit de 25 F) sans quitter l'écran.
   function renderReferralScreen(){
     if(!window.currentAppUser) return;
-    ensureReferralCode(window.currentAppUser.uid).then((code) => {
+    const uid = window.currentAppUser.uid;
+    ensureReferralCode(uid).then((code) => {
       window.currentAppUser.referralCode = code;
       const codeEl = document.getElementById('referralCodeLabel');
       if(codeEl) codeEl.textContent = code;
     });
-    firebase.database().ref('users/' + window.currentAppUser.uid).once('value').then((snap) => {
+    stopReferralListeners();
+    const userRef = firebase.database().ref('users/' + uid);
+    const listRef = firebase.database().ref('referrals/' + uid);
+    userRef.on('value', (snap) => {
       const data = snap.val() || {};
-      const countEl = document.getElementById('referralCount');
       const balEl = document.getElementById('referralBalance');
-      if(countEl) countEl.textContent = String(data.referralCount || 0);
       if(balEl) balEl.textContent = formatFCFA(data.referralBalance || 0);
-    });
+      const n = data.referralCount || 0;
+      const noteEl = document.getElementById('referralCreditsNote');
+      if(noteEl) noteEl.textContent = n > 0
+        ? n + (n > 1 ? ' commandes ou livraisons rémunérées' : ' commande ou livraison rémunérée') + ' (25 F chacune).'
+        : 'Aucune commande ou livraison rémunérée pour le moment.';
+    }, () => {});
+    listRef.on('value', (snap) => {
+      const entries = snap.val() || {};
+      const rows = Object.keys(entries).map((k) => entries[k]).filter(Boolean).sort((x, y) => (y.at || 0) - (x.at || 0)).slice(0, 100);
+      const countEl = document.getElementById('referralCount');
+      if(countEl) countEl.textContent = String(Object.keys(entries).length);
+      const listEl = document.getElementById('referralList');
+      if(!listEl) return;
+      listEl.textContent = '';
+      if(!rows.length){
+        const p = document.createElement('p'); p.className = 'section-sub'; p.textContent = 'Aucun filleul pour le moment. Partagez votre lien !'; listEl.appendChild(p); return;
+      }
+      rows.forEach((r) => {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)';
+        const left = document.createElement('div');
+        const nm = document.createElement('b'); nm.textContent = r.name || 'Nouveau membre';
+        const kd = document.createElement('div'); kd.className = 'section-sub'; kd.style.margin = '2px 0 0';
+        kd.textContent = r.kind === 'shop' ? 'Boutique' : 'Client';
+        left.appendChild(nm); left.appendChild(kd);
+        const dt = document.createElement('span'); dt.className = 'section-sub'; dt.style.margin = '0';
+        dt.textContent = r.at ? 'Inscrit le ' + new Date(r.at).toLocaleDateString('fr-FR') : '';
+        row.appendChild(left); row.appendChild(dt); listEl.appendChild(row);
+      });
+    }, () => {});
+    referralRefs = [userRef, listRef];
+    refreshReferralPushCard();
   }
+
+  // Bouton « Activer les notifications » : affiché seulement si c'est utile.
+  async function refreshReferralPushCard(){
+    const card = document.getElementById('referralPushCard');
+    if(!card) return;
+    let show = false;
+    try {
+      if(isNativeApp()){
+        const PN = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.PushNotifications;
+        if(PN){ const p = await PN.checkPermissions(); show = p.receive !== 'granted' && p.receive !== 'denied'; }
+      } else if('Notification' in window){
+        show = Notification.permission === 'default';
+      }
+    } catch(e){ show = false; }
+    card.style.display = show ? 'block' : 'none';
+  }
+  async function enableReferralPush(){
+    if(!window.currentAppUser) return;
+    await initPushNotifications('client', window.currentAppUser.uid, null, { prompt: true });
+    refreshReferralPushCard();
+  }
+  window.enableReferralPush = enableReferralPush;
 
   function shareReferralLink(){
     if(!window.currentAppUser || !window.currentAppUser.referralCode) return;
@@ -2477,7 +2583,10 @@
             // échoue (compte déjà créé) : juste pas d'attribut, à revérifier plus tard.
             serverCallable(appAuth, 'claimVerification')({ phone: pendingAuthPhone, role: 'client' }).catch(() => {}),
           ])
-        );
+        ).then(() => {
+          // Le serveur ajoute ce filleul à la liste du parrain et le prévient (sans jamais bloquer l'inscription).
+          if(referrerUid) serverCallable(appAuth, 'registerReferral')({ kind: 'client' }).catch(() => {});
+        });
       });
     }).catch((e) => {
       if(e.code === 'auth/email-already-in-use'){ setAuthError('Un compte existe déjà avec ce numéro.'); }
@@ -2523,10 +2632,12 @@
       loadSavedAddresses();
       renderRecommendedRow();
       hideAuthOverlay();
+      initPushNotifications('client', user.uid, null, { prompt: false });
     });
   }
 
   function appLogout(){
+    stopReferralListeners();
     appAuth.signOut();
   }
   window.appLogout = appLogout;
@@ -2820,7 +2931,9 @@
             createdAt: firebase.database.ServerValue.TIMESTAMP,
           }));
         }
-        return Promise.all(writes);
+        return Promise.all(writes).then(() => {
+          if(referrerUid) serverCallable(vendorAuth, 'registerReferral')({ kind: 'shop' }).catch(() => {});
+        });
       });
     }).then(() => {
       go('boutique-validation');
