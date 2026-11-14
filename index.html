@@ -448,6 +448,25 @@
 
   /* Boutiques à la une */
   .shop-row{ display:flex; gap:12px; margin-top:14px; overflow-x:auto; padding-bottom:4px; }
+  /* Recommandé pour vous : grandes cartes à faire défiler */
+  .reco-row{ display:flex; gap:14px; margin:12px -18px 0; padding:2px 18px 6px; overflow-x:auto; scroll-snap-type:x mandatory; scroll-padding-left:18px; -webkit-overflow-scrolling:touch; }
+  .reco-row::-webkit-scrollbar{ display:none; }
+  .reco-card{ flex:0 0 218px; scroll-snap-align:start; background:var(--card); border:1px solid var(--border); border-radius:var(--radius-md); overflow:hidden; box-shadow:var(--shadow); cursor:pointer; transition:transform .12s ease; }
+  .reco-card:active{ transform:scale(.98); }
+  .reco-img{ height:236px; display:flex; align-items:center; justify-content:center; position:relative; overflow:hidden; }
+  .reco-img svg, .reco-img i{ width:64px; height:64px; }
+  .reco-badge{ position:absolute; top:10px; left:10px; background:var(--yellow); color:var(--black); font-size:11px; font-weight:700; padding:5px 9px; border-radius:999px; }
+  .reco-body{ padding:12px 14px 14px; }
+  .reco-body b{ display:block; font-size:14px; font-weight:600; line-height:1.25; }
+  .reco-shop{ font-size:12px; color:var(--text-soft); margin-top:3px; }
+  .reco-foot{ display:flex; align-items:center; justify-content:space-between; margin-top:10px; }
+  .reco-price{ font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:21px; }
+  .reco-add{ width:40px; height:40px; border-radius:50%; border:none; background:var(--yellow); color:var(--black); display:flex; align-items:center; justify-content:center; cursor:pointer; }
+  .reco-add svg, .reco-add i{ width:18px; height:18px; }
+  .reco-add.done{ background:#3EAF4C; color:#fff; }
+  .reco-dots{ display:flex; justify-content:center; gap:6px; margin-top:8px; }
+  .reco-dots span{ width:6px; height:6px; border-radius:3px; background:var(--border); transition:all .15s ease; }
+  .reco-dots span.on{ width:18px; background:var(--text); }
   .shop-row::-webkit-scrollbar{ display:none; }
   .shop-card{ flex:0 0 auto; width:112px; text-align:center; cursor:pointer; }
   .shop-logo{ width:66px; height:66px; border-radius:50%; margin:0 auto; display:flex; align-items:center; justify-content:center; border:1px solid var(--border); }
@@ -1353,7 +1372,8 @@
 
         <div id="recommendedSection" style="display:none">
           <h2 class="section-title" style="font-size:19px;margin-top:24px">Recommandé pour vous</h2>
-          <div class="shop-row" id="recommendedRow"></div>
+          <div class="reco-row" id="recommendedRow" onscroll="updateRecoDots()"></div>
+          <div class="reco-dots" id="recommendedDots" aria-hidden="true"></div>
         </div>
 
         <h2 class="section-title" style="font-size:19px;margin-top:22px">Produits</h2>
@@ -5836,15 +5856,58 @@
     const items = getRecommendedProducts();
     if(items.length === 0){ section.style.display = 'none'; return; }
     section.style.display = 'block';
-    el.innerHTML = items.map((p) => `
-      <div class="shop-card" onclick="openProduct('${p.key}')">
-        <div class="shop-logo" style="background:${p.photoUrl ? 'none' : p.bg}">${mediaHtml(p, 22)}</div>
-        <b>${escapeHtml(p.name)}</b>
-        <div class="stars"><span>${formatFCFA(p.price)}</span></div>
-      </div>
-    `).join('');
+    el.innerHTML = items.map((p, i) => {
+      const shop = shopsByKey[p.shop];
+      return `
+      <div class="reco-card" onclick="openProduct('${p.key}')">
+        <div class="reco-img" style="background:${p.photoUrl ? 'none' : p.bg}">
+          ${mediaHtml(p, 64)}
+          ${i === 0 ? '<div class="reco-badge">Pour vous</div>' : ''}
+        </div>
+        <div class="reco-body">
+          <b>${escapeHtml(p.name)}</b>
+          <div class="reco-shop">${escapeHtml(shop ? shop.name : '')}</div>
+          <div class="reco-foot">
+            <div class="reco-price">${formatFCFA(p.price)}</div>
+            <button class="reco-add" aria-label="Ajouter au panier" onclick="quickAddToCart('${p.key}', event, this)"><i data-feather="plus"></i></button>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+    const dots = document.getElementById('recommendedDots');
+    if(dots){ dots.innerHTML = items.map((_, i) => '<span' + (i === 0 ? ' class="on"' : '') + '></span>').join(''); }
     feather.replace({ 'stroke-width': 2.25 });
   }
+
+  // Point actif sous le carrousel "Recommandé pour vous"
+  function updateRecoDots(){
+    const row = document.getElementById('recommendedRow'), dots = document.getElementById('recommendedDots');
+    if(!row || !dots) return;
+    const cards = row.children; if(!cards.length) return;
+    const step = cards[0].getBoundingClientRect().width + 14;
+    const idx = Math.max(0, Math.min(cards.length - 1, Math.round(row.scrollLeft / step)));
+    Array.from(dots.children).forEach((d, i) => d.classList.toggle('on', i === idx));
+  }
+  window.updateRecoDots = updateRecoDots;
+
+  // Bouton "+" d'une carte recommandée : ajoute 1 article au panier sans ouvrir la fiche.
+  function quickAddToCart(key, ev, btn){
+    if(ev){ ev.stopPropagation(); }
+    const p = productsByKey[key]; if(!p) return;
+    const shop = shopsByKey[p.shop];
+    if(shop && !isShopOpenNow(shop)){ alert('Cette boutique est fermée pour le moment.'); return; }
+    const existing = cart.find(c => c.productKey === key);
+    if(existing){ existing.qty += 1; } else { cart.push({ productKey: key, qty: 1 }); }
+    persistCart();
+    updateCartBadge();
+    if(btn){
+      btn.classList.add('done');
+      btn.innerHTML = '<i data-feather="check"></i>';
+      feather.replace({ 'stroke-width': 2.6 });
+      setTimeout(() => { btn.classList.remove('done'); btn.innerHTML = '<i data-feather="plus"></i>'; feather.replace({ 'stroke-width': 2.6 }); }, 1200);
+    }
+  }
+  window.quickAddToCart = quickAddToCart;
 
   // ================= Publicités programmées =================
   // Deux espaces ("home" et "marketplace"), chacun divisé en 12 créneaux de
