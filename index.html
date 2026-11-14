@@ -8279,8 +8279,15 @@ async function withdrawCommissionBalance(){
   if(!net) return;
   const network = /moov/i.test(net) ? 'moov_bf' : 'orange_bf_direct';
   if(!confirm('Retirer ' + formatFCFA(amount) + ' vers ' + jlMaskPhone(d.phone) + ' ? Le virement part tout de suite.')) return;
+  // Clé unique par retrait voulu : si la connexion coupe et que la demande est renvoyée, le serveur ne vire qu'une seule fois.
+  const sig = amount + '|' + network;
+  if(!window.__jlWithdrawKey || window.__jlWithdrawKey.sig !== sig){
+    const rnd = (window.crypto && crypto.getRandomValues) ? Array.from(crypto.getRandomValues(new Uint8Array(16)), x => x.toString(16).padStart(2, '0')).join('') : (Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
+    window.__jlWithdrawKey = { sig, key: 'wk' + rnd };
+  }
   try {
-    const res = await serverCallable(driverAuth, 'requestCommissionWithdrawal')({ amount, network });
+    const res = await serverCallable(driverAuth, 'requestCommissionWithdrawal')({ amount, network, requestKey: window.__jlWithdrawKey.key });
+    window.__jlWithdrawKey = null;
     const out = (res && res.data) || {};
     alert('Retrait effectué : ' + formatFCFA(out.netAmount || amount) + ' envoyés sur votre numéro' + ((out.fees || 0) > 0 ? ' (frais : ' + formatFCFA(out.fees) + ')' : '') + '. Nouveau solde : ' + formatFCFA(out.balanceLeft || 0) + '.');
   } catch(e){
