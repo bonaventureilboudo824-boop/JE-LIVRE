@@ -3637,6 +3637,7 @@
         }
         window.currentDriverUser = { uid: user.uid, name: data.name || 'Livreur', phone: data.phone || '', vehicule: data.vehicle || 'Moto', available: data.available !== false, pendingCommission: data.pendingCommission || 0 };
         stopDriverCommissionListeners(); listenDriverCommission();
+        jlDriverPublic({ name: window.currentDriverUser.name, vehicle: window.currentDriverUser.vehicule, available: window.currentDriverUser.available });
         closeDriverLogin();
         document.getElementById('driverAuthViewLogin').style.display = 'block';
         document.getElementById('driverAuthViewPending').style.display = 'none';
@@ -4111,7 +4112,7 @@
 
   function ensureDemoDrivers() {
     if (typeof firebase === 'undefined') return;
-    firebase.database().ref('drivers').once('value').then((snap) => {
+    firebase.database().ref('driverPublic').once('value').then((snap) => {
       const all = snap.val() || {};
       const onlineCount = Object.values(all).filter((d) => d && d.online).length;
       if (onlineCount > 0) return;
@@ -4484,7 +4485,7 @@
     if (suiviDriverRef) { suiviDriverRef.off(); suiviDriverRef = null; }
 
     if (delivery && delivery.driverId && typeof firebase !== 'undefined') {
-      suiviDriverRef = firebase.database().ref('drivers/' + delivery.driverId);
+      suiviDriverRef = firebase.database().ref('driverPublic/' + delivery.driverId);
       suiviDriverRef.on('value', (snap) => {
         const d = snap.val();
         if (!d || typeof d.lat !== 'number') return;
@@ -4549,7 +4550,7 @@
       return;
     }
     try {
-      const snap = await firebase.database().ref('drivers').once('value');
+      const snap = await firebase.database().ref('driverPublic').once('value');
       const nearby = window.GeoUtils.findNearbyDrivers(snap.val() || {}, origin.lat, origin.lng, 6);
       nearby.forEach((d) => {
         const icon = driverDotIcon(16);
@@ -6662,6 +6663,15 @@
     startDriverPositionTracking();
   }
 
+  // Copie PUBLIQUE du livreur (nom, véhicule, position, en ligne) : c'est la seule partie que les clients
+  // peuvent lire. Téléphone, gains et commission restent dans drivers/<uid>, lisible seulement par le livreur et l'admin.
+  function jlDriverPublic(patch){
+    try{
+      if(!window.currentDriverUser) return;
+      driverDb.ref('driverPublic/' + window.currentDriverUser.uid).update(patch).catch(function(){});
+    }catch(e){}
+  }
+
   function startDriverPositionTracking(){
     if (driverWatchId != null || !window.currentDriverUser) return;
     if (!navigator.geolocation) {
@@ -6672,16 +6682,19 @@
     const uid = window.currentDriverUser.uid;
     const driverRef = driverDb.ref('drivers/' + uid);
     driverRef.onDisconnect().update({ online: false }); // coupure réseau/fermeture de l'app
+    try{ driverDb.ref('driverPublic/' + uid).onDisconnect().update({ online: false }); }catch(e){}
     driverWatchId = navigator.geolocation.watchPosition((pos) => {
       window.courierOwnPosition = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       flushDriverPositionCallbacks();
       const now = Date.now();
       if (now - lastDriverPositionWrite > 6000) { // on limite l'écriture à une fois toutes les ~6s
         lastDriverPositionWrite = now;
-        driverRef.update({
+        const posPatch = {
           lat: pos.coords.latitude, lng: pos.coords.longitude, heading: pos.coords.heading || 0,
           online: true, updatedAt: firebase.database.ServerValue.TIMESTAMP,
-        });
+        };
+        driverRef.update(posPatch);
+        jlDriverPublic(posPatch);
       }
     }, () => {
       if (!window.courierOwnPosition) { window.courierOwnPosition = { lat: OUAGA_CENTER[0], lng: OUAGA_CENTER[1] }; }
@@ -6691,7 +6704,7 @@
 
   function stopDriverPositionTracking(){
     if (driverWatchId != null) { navigator.geolocation.clearWatch(driverWatchId); driverWatchId = null; }
-    if (window.currentDriverUser) { driverDb.ref('drivers/' + window.currentDriverUser.uid).update({ online: false }); }
+    if (window.currentDriverUser) { driverDb.ref('drivers/' + window.currentDriverUser.uid).update({ online: false }); jlDriverPublic({ online: false }); }
   }
 
   window.dismissedRequests = new Set();
@@ -7730,7 +7743,7 @@
     label.textContent = off ? 'Indisponible' : 'Disponible';
     dot.style.background = off ? '#B9B7B0' : '#3EAF4C';
     window.driverAvailable = !off;
-    if(window.currentDriverUser){ driverDb.ref('drivers/' + window.currentDriverUser.uid).update({ available: !off }); }
+    if(window.currentDriverUser){ driverDb.ref('drivers/' + window.currentDriverUser.uid).update({ available: !off }); jlDriverPublic({ available: !off }); }
     renderDeliveryRequestsList(lastDeliveryRequestsSnap);
     renderMarketplaceRequestsList(lastMarketplaceRequestsSnap);
   }
