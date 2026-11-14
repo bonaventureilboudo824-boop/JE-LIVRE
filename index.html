@@ -437,6 +437,10 @@
   .prod-ad-banner{ grid-column:1/3; margin-top:0; cursor:pointer; }
 
   /* Vendre CTA */
+  .myshop-wrap{ position:sticky; bottom:98px; height:0; display:flex; justify-content:flex-end; z-index:20; pointer-events:none; }
+  .myshop-fab{ pointer-events:auto; transform:translateY(-100%); display:flex; align-items:center; gap:7px; height:44px; padding:0 16px 0 13px; border:none; border-radius:999px; background:var(--yellow); color:var(--black); font-family:'Inter',sans-serif; font-weight:700; font-size:13px; box-shadow:0 8px 20px rgba(13,13,12,.28); cursor:pointer; }
+  .myshop-fab:active{ transform:translateY(-100%) scale(.97); }
+  .myshop-fab svg, .myshop-fab i{ width:18px; height:18px; }
   .sell-cta{ margin-top:18px; background:var(--black); border-radius:var(--radius-lg); padding:18px; position:relative; overflow:hidden; display:flex; align-items:center; gap:14px; }
   .sell-cta::after{ content:""; position:absolute; width:120px; height:120px; background:var(--yellow); opacity:.12; border-radius:50%; right:-40px; top:-40px; }
   .sell-cta .ic{ width:46px; height:46px; border-radius:50%; background:var(--yellow); display:flex; align-items:center; justify-content:center; flex:0 0 auto; }
@@ -1364,11 +1368,6 @@
           <div class="chip" onclick="filterCategory(this,'Beauté')">Beauté</div>
         </div>
 
-        <div class="sell-cta" onclick="openSellEntry()">
-          <div class="ic"><i data-feather="shopping-bag"></i></div>
-          <div><b>Vendez sur Je Livre</b><span>Ouvrez votre boutique en quelques minutes</span></div>
-          <div class="chev"><i data-feather="chevron-right"></i></div>
-        </div>
 
         <div id="recommendedSection" style="display:none">
           <h2 class="section-title" style="font-size:19px;margin-top:24px">Recommandé pour vous</h2>
@@ -1378,6 +1377,9 @@
 
         <h2 class="section-title" style="font-size:19px;margin-top:22px">Produits</h2>
         <div class="prod-grid" id="prodGrid"></div>
+
+        <!-- Bouton flottant « Ma boutique » : dashboard si déjà inscrit, sinon inscription -->
+        <div class="myshop-wrap"><button class="myshop-fab" onclick="openSellEntry()" aria-label="Ma boutique"><i data-feather="shopping-bag"></i><span>Ma boutique</span></button></div>
       </div>
 
       <!-- REELS -->
