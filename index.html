@@ -767,6 +767,33 @@
   .reel-empty svg{ width:36px; height:36px; color:#6E6C66; }
   .reel-empty span{ font-size:12.5px; color:#8A8880; }
 </style>
+
+<style id="jl-compliance-css">
+.jl-modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:flex-end;justify-content:center;z-index:100000}
+.jl-modal.open{display:flex}
+.jl-sheet{background:#fff;color:#0D0D0C;width:100%;max-width:480px;border-radius:20px 20px 0 0;padding:20px 18px 26px;max-height:90vh;overflow:auto;box-shadow:0 -8px 30px rgba(0,0,0,.25)}
+.jl-sheet h3{margin:0 0 6px;font-size:18px}.jl-sheet p{margin:6px 0;font-size:14px;line-height:1.5;color:#33332f}
+.jl-reasons{display:flex;flex-direction:column;gap:2px;margin:10px 0}
+.jl-reasons label{display:flex;gap:10px;align-items:center;padding:9px 10px;border:1px solid #E5E1D2;border-radius:10px;font-size:14px;cursor:pointer}
+.jl-reasons input{width:18px;height:18px;flex:none}
+.jl-sheet textarea,.jl-sheet input[type=password],.jl-sheet input[type=text]{width:100%;border:1px solid #D9D4C2;border-radius:10px;padding:10px 12px;font-size:15px;font-family:inherit;margin-top:6px}
+.jl-sheet textarea{min-height:64px;resize:vertical}
+.jl-btns{display:flex;gap:10px;margin-top:14px}
+.jl-btns button{flex:1;border:0;border-radius:999px;padding:13px 10px;font-size:15px;font-weight:700;cursor:pointer}
+.jl-btn-main{background:#FFC629;color:#0D0D0C}.jl-btn-danger{background:#B3261E;color:#fff}.jl-btn-ghost{background:#F1EEE2;color:#0D0D0C}
+.jl-btns button:disabled{opacity:.55}
+.jl-err{color:#B3261E;font-size:13.5px;margin-top:8px;min-height:18px}
+.jl-menu-item{display:block;width:100%;text-align:left;background:#fff;border:0;border-bottom:1px solid #EEE9D8;padding:15px 6px;font-size:16px;cursor:pointer}
+.jl-menu-item.danger{color:#B3261E}
+.jl-check{display:flex;gap:9px;align-items:flex-start;font-size:13px;line-height:1.45;margin:10px 2px;text-align:left}
+.jl-check input{width:18px;height:18px;margin-top:1px;flex:none}
+.jl-check a,.jl-legal-mini a,.jl-sheet a{color:#0B57D0;text-decoration:underline}
+.jl-legal-mini{font-size:12px;text-align:center;margin-top:10px;color:#6a6a63}
+.jl-cmt-actions{font-size:12px;margin-top:3px;color:#8a8a80}.jl-cmt-actions a{color:#8a8a80;text-decoration:underline;cursor:pointer}
+.jl-blocked-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 2px;border-bottom:1px solid #EEE9D8;font-size:15px}
+.jl-blocked-row button{border:0;background:#F1EEE2;border-radius:999px;padding:8px 14px;font-weight:700;cursor:pointer}
+.auth-card .jl-check{color:#fff}.auth-card .jl-check a,.auth-card .jl-legal-mini a{color:#FFC629}.auth-card .jl-legal-mini{color:#bdbdb4}
+</style>
 </head>
 <body>
 
@@ -806,7 +833,8 @@
       <input id="authNewPasswordInput" type="password" placeholder="Choisissez un mot de passe" autocomplete="new-password">
       <input id="authNewPasswordConfirm" type="password" placeholder="Confirmez le mot de passe" autocomplete="new-password">
       <input id="authReferralInput" placeholder="Code de parrainage (optionnel)">
-      <button class="auth-submit" onclick="signupFinish()">Créer mon compte</button>
+      <label class="jl-check"><input type="checkbox" id="authTermsCheck"><span>J'accepte les <a href="https://jelivre.shop/conditions.html" target="_blank" rel="noopener">conditions d'utilisation</a> et la <a href="https://jelivre.shop/confidentialite.html" target="_blank" rel="noopener">politique de confidentialité</a>.</span></label>
+ <button class="auth-submit" onclick="signupFinish()">Créer mon compte</button>
     </div>
 
     <!-- ÉTAPE 3b : nouveau mot de passe (réinitialisation) -->
@@ -817,6 +845,7 @@
     </div>
 
     <div class="auth-error" id="authError"></div>
+ <div class="jl-legal-mini"><a href="https://jelivre.shop/confidentialite.html" target="_blank" rel="noopener">Confidentialité</a> · <a href="https://jelivre.shop/conditions.html" target="_blank" rel="noopener">Conditions d\'utilisation</a></div>
   </div>
 </div>
 
@@ -866,6 +895,7 @@
     </div>
 
     <div class="auth-error" id="driverAuthError"></div>
+ <div class="jl-legal-mini"><a href="https://jelivre.shop/confidentialite.html" target="_blank" rel="noopener">Confidentialité</a> · <a href="https://jelivre.shop/conditions.html" target="_blank" rel="noopener">Conditions d\'utilisation</a></div>
   </div>
 </div>
 
@@ -915,6 +945,7 @@
     </div>
 
     <div class="auth-error" id="vendorAuthError"></div>
+ <div class="jl-legal-mini"><a href="https://jelivre.shop/confidentialite.html" target="_blank" rel="noopener">Confidentialité</a> · <a href="https://jelivre.shop/conditions.html" target="_blank" rel="noopener">Conditions d\'utilisation</a></div>
   </div>
 </div>
 
@@ -964,6 +995,7 @@
     </div>
 
     <div class="auth-error" id="entAuthError"></div>
+ <div class="jl-legal-mini"><a href="https://jelivre.shop/confidentialite.html" target="_blank" rel="noopener">Confidentialité</a> · <a href="https://jelivre.shop/conditions.html" target="_blank" rel="noopener">Conditions d\'utilisation</a></div>
   </div>
 </div>
 
@@ -1538,7 +1570,8 @@
         <div class="field"><label>Nom du produit</label><input id="regShopProdName" placeholder="Ex. : Robe wax"></div>
         <div class="field"><label>Prix (FCFA)</label><input id="regShopProdPrice" type="number" placeholder="5 000"></div>
         <div class="upload-box" data-upload="shopFirstProductPhoto" data-accept="image/*"><i data-feather="camera"></i><span>Ajouter une photo du produit</span></div>
-        <button class="btn btn-yellow" style="margin-top:20px" onclick="submitBoutiqueRegistration()">Terminer l'inscription</button>
+        <label class="jl-check"><input type="checkbox" id="regTermsCheck"><span>J'accepte les <a href="https://jelivre.shop/conditions.html" target="_blank" rel="noopener">conditions d'utilisation</a> (contenus interdits, modération) et la <a href="https://jelivre.shop/confidentialite.html" target="_blank" rel="noopener">politique de confidentialité</a>.</span></label>
+ <button class="btn btn-yellow" style="margin-top:20px" onclick="submitBoutiqueRegistration()">Terminer l'inscription</button>
         <div class="link-row">Vous préférez <a onclick="submitBoutiqueRegistration()">l'ajouter plus tard</a></div>
       </div>
 
@@ -1561,6 +1594,7 @@
           <div class="stat-card"><span>Revenus (mois)</span><b id="shopStatEarnings">—</b></div>
         </div>
         <div class="link-row" style="margin-top:4px"><a onclick="go('vendor-notifications')">Notifications</a> · <a onclick="vendorLogout()">Se déconnecter de l'espace boutique</a></div>
+ <div class="link-row" style="margin-top:2px"><a onclick="jlOpenLegal('confidentialite')">Confidentialité</a> · <a onclick="jlOpenLegal('conditions')">Conditions</a> · <a onclick="jlOpenDelete('vendor')" style="color:#B3261E">Supprimer mon compte</a></div>
         <div class="shop-toggle-card">
           <div class="avail-dot" id="shopOpenDot"></div>
           <b id="shopOpenLabel">Boutique ouverte</b>
@@ -1756,20 +1790,22 @@
           <div class="stat-card"><span>Revenus</span><b id="driverStatEarnings">—</b></div>
         </div>
         <div class="link-row" style="margin-top:4px"><a onclick="go('driver-notifications')">Notifications</a> · <a onclick="driverLogout()">Se déconnecter de l'espace livreur</a></div>
+ <div class="link-row" style="margin-top:2px"><a onclick="jlOpenLegal('confidentialite')">Confidentialité</a> · <a onclick="jlOpenLegal('conditions')">Conditions</a> · <a onclick="jlOpenDelete('driver')" style="color:#B3261E">Supprimer mon compte</a></div>
         <div id="commissionBanner" style="display:none;margin-top:14px;background:#FBEAEA;border:1px solid #F3C6C6;border-radius:var(--radius-md);padding:14px">
           <b style="color:#B3261E">Commission due : <span id="commissionAmount">0 F</span></b>
-          <p class="section-sub" style="margin-top:4px">100 F par colis en Express/Groupée, 10 % du prix en Livraison simple payée cash. Réglez-la pour pouvoir accepter une nouvelle course.</p>
+          <p class="section-sub" style="margin-top:4px">100 F par colis en Express/Groupée, 10 % du prix en Livraison simple payée cash. Payez-la par Mobile Money (réglée automatiquement dès la confirmation) ou avec votre solde pour pouvoir accepter une nouvelle course.</p>
           <p id="commissionCoverNote" class="section-sub" style="display:none;margin-top:6px;color:#1E7B34;font-weight:600"></p>
-          <button class="btn btn-black" style="margin-top:8px;padding:10px" onclick="payCommission()">J'ai payé ma commission</button>
+          <button class="btn btn-black" style="margin-top:8px;padding:10px" onclick="payCommission()">Payer ma commission par Mobile Money</button>
         </div>
         <div id="commissionWallet" style="margin-top:14px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
             <span style="font-size:13px;color:var(--text-soft)">Solde de commission (garantie)</span>
             <b id="commissionBalance" style="font-family:'Barlow Condensed',sans-serif;font-size:24px">0 F</b>
           </div>
-          <p class="section-sub">Rechargez ce solde : tant qu'il couvre votre commission en attente, vous pouvez accepter d'autres livraisons sans la régler à chaque fois. Il peut aussi servir à la payer. Vous pouvez toujours la payer vous-même, comme avant.</p>
+          <p class="section-sub">Rechargez ce solde : tant qu'il couvre votre commission en attente, vous pouvez accepter d'autres livraisons sans la régler à chaque fois. Il peut aussi servir à la payer. Vous pouvez aussi retirer ce qui dépasse votre commission en attente.</p>
           <button class="btn btn-yellow" style="margin-top:8px;padding:10px" onclick="topUpCommission()">Recharger mon solde</button>
           <button id="payFromBalanceBtn" class="btn btn-black" style="display:none;margin-top:8px;padding:10px" onclick="payCommissionFromBalance()">Payer ma commission avec mon solde</button>
+          <button id="withdrawCommissionBtn" class="btn btn-outline" style="display:none;margin-top:8px;padding:10px" onclick="withdrawCommissionBalance()">Retirer mon solde</button>
           <label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:13px;color:var(--text-soft)">
             <input type="checkbox" id="commissionAutoPay" onchange="setCommissionAutoPay(this.checked)" style="margin-top:3px">
             <span>Prélever automatiquement ma commission sur ce solde dès qu'elle est due (j'autorise ce prélèvement).</span>
@@ -1841,6 +1877,7 @@
           <div class="stat-card"><span>Revenus (mois)</span><b id="fleetStatEarnings">—</b></div>
         </div>
         <div class="link-row" style="margin-top:4px"><a onclick="entrepriseLogout()">Se déconnecter de l'espace entreprise</a></div>
+ <div class="link-row" style="margin-top:2px"><a onclick="jlOpenLegal('confidentialite')">Confidentialité</a> · <a onclick="jlOpenLegal('conditions')">Conditions</a> · <a onclick="jlOpenDelete('entreprise')" style="color:#B3261E">Supprimer mon compte</a></div>
 
         <h2 class="section-title" style="font-size:19px;margin-top:22px">Votre flotte</h2>
         <div id="fleetMapReal" style="height:190px;border-radius:var(--radius-lg);overflow:hidden;border:1px solid var(--border);margin-top:10px"></div>
@@ -2007,7 +2044,11 @@
           <div class="menu-row"><div class="ic"><i data-feather="credit-card"></i></div><b>Moyens de paiement</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
           <div class="menu-row" onclick="go('devenir-livreur')"><div class="ic"><i data-feather="truck"></i></div><b>Devenir livreur</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
           <div class="menu-row" onclick="go('support-chat')"><div class="ic"><i data-feather="help-circle"></i></div><b>Aide</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
-          <div class="menu-row" onclick="appLogout()"><div class="ic"><i data-feather="log-out"></i></div><b>Déconnexion</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row" onclick="jlOpenLegal('confidentialite')"><div class="ic"><i data-feather="shield"></i></div><b>Politique de confidentialité</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+ <div class="menu-row" onclick="jlOpenLegal('conditions')"><div class="ic"><i data-feather="file-text"></i></div><b>Conditions d'utilisation</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+ <div class="menu-row" onclick="jlOpenBlocked()"><div class="ic"><i data-feather="user-x"></i></div><b>Utilisateurs bloqués</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+ <div class="menu-row" onclick="jlOpenDelete('client')"><div class="ic"><i data-feather="trash-2"></i></div><b>Supprimer mon compte</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+ <div class="menu-row" onclick="appLogout()"><div class="ic"><i data-feather="log-out"></i></div><b>Déconnexion</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
         </div>
       </div>
 
@@ -2084,6 +2125,52 @@
     </div>
   </div>
 </div>
+
+
+<!-- ===== CONFORMITÉ GOOGLE PLAY : signalement, blocage, conditions, suppression de compte ===== -->
+<div class="jl-modal" id="jlReportModal"><div class="jl-sheet" role="dialog" aria-modal="true">
+ <h3>Signaler ce contenu</h3><p>Dites-nous pourquoi. Notre équipe examine chaque signalement. Le contenu sera masqué pour vous.</p>
+ <div class="jl-reasons" id="jlReasons">
+  <label><input type="radio" name="jlReason" value="inapproprie">Contenu inapproprié ou choquant</label>
+  <label><input type="radio" name="jlReason" value="violence_haine">Violence, haine ou harcèlement</label>
+  <label><input type="radio" name="jlReason" value="sexuel">Contenu sexuel ou nudité</label>
+  <label><input type="radio" name="jlReason" value="arnaque">Arnaque, faux produit ou usurpation</label>
+  <label><input type="radio" name="jlReason" value="interdit">Produit interdit (alcool, tabac, armes, drogues…)</label>
+  <label><input type="radio" name="jlReason" value="spam">Spam ou publicité</label>
+  <label><input type="radio" name="jlReason" value="autre">Autre</label>
+ </div>
+ <textarea id="jlReportDetails" maxlength="300" placeholder="Précisions (facultatif)"></textarea>
+ <div class="jl-err" id="jlReportErr"></div>
+ <div class="jl-btns"><button class="jl-btn-ghost" onclick="jlCloseModal('jlReportModal')">Annuler</button><button class="jl-btn-main" id="jlReportSend" onclick="jlSubmitReport()">Envoyer</button></div>
+</div></div>
+
+<div class="jl-modal" id="jlReelMenu"><div class="jl-sheet" role="dialog" aria-modal="true">
+ <button class="jl-menu-item" onclick="jlReelMenuReport()">Signaler ce Reel</button>
+ <button class="jl-menu-item" onclick="jlReelMenuBlock()">Bloquer cette boutique</button>
+ <button class="jl-menu-item" onclick="jlCloseModal('jlReelMenu')">Annuler</button>
+</div></div>
+
+<div class="jl-modal" id="jlTermsModal"><div class="jl-sheet" role="dialog" aria-modal="true">
+ <h3>Conditions d'utilisation</h3>
+ <p>Avant de publier ou de commenter, vous devez accepter nos règles : pas de contenu illégal, violent, haineux, sexuel, trompeur ou interdit. Les contenus peuvent être signalés et supprimés, et les comptes abusifs suspendus.</p>
+ <p><a href="https://jelivre.shop/conditions.html" target="_blank" rel="noopener">Lire les conditions d'utilisation</a> · <a href="https://jelivre.shop/confidentialite.html" target="_blank" rel="noopener">Politique de confidentialité</a></p>
+ <div class="jl-btns"><button class="jl-btn-ghost" onclick="jlTermsAnswer(false)">Plus tard</button><button class="jl-btn-main" onclick="jlTermsAnswer(true)">J'accepte</button></div>
+</div></div>
+
+<div class="jl-modal" id="jlDeleteModal"><div class="jl-sheet" role="dialog" aria-modal="true">
+ <h3>Supprimer mon compte</h3>
+ <p><b>Cette action est définitive.</b> Votre profil, vos données personnelles, vos contenus (produits, Reels, commentaires) et votre accès seront supprimés. Les commandes et paiements sont conservés sans vos informations personnelles.</p>
+ <p>Le compte est lié à votre numéro : tous vos espaces (client, boutique, livreur…) seront supprimés. <a href="https://jelivre.shop/suppression-compte.html" target="_blank" rel="noopener">En savoir plus</a></p>
+ <input type="password" id="jlDeletePwd" placeholder="Votre mot de passe" autocomplete="current-password">
+ <input type="text" id="jlDeleteTyped" placeholder="Écrivez SUPPRIMER pour confirmer" autocomplete="off" autocapitalize="characters">
+ <div class="jl-err" id="jlDeleteErr"></div>
+ <div class="jl-btns"><button class="jl-btn-ghost" onclick="jlCloseModal('jlDeleteModal')">Annuler</button><button class="jl-btn-danger" id="jlDeleteGo" onclick="jlConfirmDelete()">Supprimer définitivement</button></div>
+</div></div>
+
+<div class="jl-modal" id="jlBlockedModal"><div class="jl-sheet" role="dialog" aria-modal="true">
+ <h3>Utilisateurs bloqués</h3><div id="jlBlockedList"></div>
+ <div class="jl-btns"><button class="jl-btn-ghost" onclick="jlCloseModal('jlBlockedModal')">Fermer</button></div>
+</div></div>
 
 <script>
   // ================= Fond de carte =================
@@ -2557,7 +2644,7 @@
   }
   window.loginSubmit = loginSubmit;
 
-  function signupFinish(){
+  function signupFinish(){ if(!jlTermsChecked('authTermsCheck')){ setAuthError("Pour créer votre compte, acceptez les conditions d'utilisation et la politique de confidentialité."); return; } window.__jlPendingTerms = 'client';
     const name = (document.getElementById('authNameInput').value || '').trim();
     const password = document.getElementById('authNewPasswordInput').value || '';
     const confirm = document.getElementById('authNewPasswordConfirm').value || '';
@@ -2741,6 +2828,7 @@
     });
   }
   appAuth.onAuthStateChanged((user) => {
+    jlOnClientAuth(user);
     if(user){
       loadAppUserProfile(user);
       // On attend d'être sûr d'être authentifié avant de charger les
@@ -2877,7 +2965,7 @@
   }
   window.verifyVendorOtp = verifyVendorOtp;
 
-  function submitBoutiqueRegistration(){
+  function submitBoutiqueRegistration(){ if(!jlTermsChecked('regTermsCheck')){ alert("Acceptez les conditions d'utilisation et la politique de confidentialité pour terminer l'inscription."); return; }
     if(!pendingVendorSignup || !pendingVendorSignup.uid){
       alert("Une erreur est survenue : votre compte n'a pas été créé. Reprenez l'inscription depuis le début.");
       return;
@@ -2936,6 +3024,7 @@
         });
       });
     }).then(() => {
+      jlRecordTerms(vendorAuth, vendorDb).catch(() => {});
       go('boutique-validation');
     }).catch((e) => {
       alert("Erreur lors de l'enregistrement de votre inscription : " + e.message);
@@ -3076,6 +3165,7 @@
   // Reconnaît automatiquement une boutique déjà connectée au rechargement de
   // l'app, via l'attribut phoneVerified (posé uniquement par le serveur).
   vendorAuth.onAuthStateChanged((user) => {
+    jlOnVendorAuth(user);
     if(!user){ window.currentVendorUser = null; resetVendorSession(); return; }
     user.getIdTokenResult(true).then((token) => {
       if(token.claims.phoneVerified !== true) return;
@@ -3352,7 +3442,7 @@
   }
   window.entrepriseLogout = entrepriseLogout;
 
-  entrepriseAuth.onAuthStateChanged((user) => {
+  entrepriseAuth.onAuthStateChanged((user) => { jlOnEntrepriseAuth(user);
     if(!user){ window.currentEntrepriseUser = null; resetEntrepriseSession(); return; }
     user.getIdTokenResult(true).then((token) => {
       if(token.claims.phoneVerified !== true) return;
@@ -3657,7 +3747,7 @@
   // explicitement — la persistance est gérée par Firebase. On reconnaît
   // cette session déjà ouverte au rechargement de l'app, via l'attribut
   // phoneVerified (posé uniquement par le serveur, voir claimVerification).
-  driverAuth.onAuthStateChanged((user) => {
+  driverAuth.onAuthStateChanged((user) => { jlOnDriverAuth(user);
     if(!user){ window.currentDriverUser = null; resetDriverSession(); return; }
     user.getIdTokenResult(true).then((token) => {
       if(token.claims.phoneVerified !== true) return;
@@ -3707,6 +3797,7 @@
     const balEl = document.getElementById('commissionBalance'); if(balEl) balEl.textContent = formatFCFA(balance);
     const autoEl = document.getElementById('commissionAutoPay'); if(autoEl) autoEl.checked = !!d.commissionAutoPay;
     const payBtn = document.getElementById('payFromBalanceBtn'); if(payBtn) payBtn.style.display = (owed > 0 && balance > 0) ? 'block' : 'none';
+    const wBtn = document.getElementById('withdrawCommissionBtn'); if(wBtn){ const av = Math.max(0, balance - owed); wBtn.style.display = av >= 500 ? 'block' : 'none'; wBtn.textContent = "Retirer mon solde (jusqu'à " + formatFCFA(Math.min(av, 200000)) + ')'; }
     const banner = document.getElementById('commissionBanner');
     const amountEl = document.getElementById('commissionAmount');
     if(!banner) return;
@@ -3730,21 +3821,7 @@
   // Le livreur n'a pas de moyen de paiement automatique vers la plateforme
   // (pas d'agrégateur mobile money branché) : il déclare avoir payé (par
   // Mobile Money, en direct), et un admin vérifie puis solde sa commission.
-  function payCommission(){
-    if(!window.currentDriverUser || !(window.currentDriverUser.pendingCommission > 0)) return;
-    const amount = window.currentDriverUser.pendingCommission;
-    if(!confirm('Confirmez-vous avoir envoyé ' + formatFCFA(amount) + ' à Je Livre par Mobile Money ?')) return;
-    const id = 'cp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-    driverDb.ref('commissionPayments/' + id).set({
-      driverId: window.currentDriverUser.uid,
-      driverName: window.currentDriverUser.name,
-      amount,
-      status: 'pending',
-      declaredAt: firebase.database.ServerValue.TIMESTAMP,
-    }).then(() => {
-      alert('Merci ! Votre paiement sera vérifié par notre équipe sous peu. Vous pourrez de nouveau accepter des livraisons une fois confirmé.');
-    }).catch((e) => alert('Erreur : ' + e.message));
-  }
+  /* remplacée plus bas : paiement par Mobile Money */ function payCommissionLegacyUnused(){ return; }
   window.payCommission = payCommission;
 
   // ---- Solde de commission (garantie) : écouteurs temps réel ----
@@ -3822,7 +3899,7 @@
     function onValue(snap){
       const p = snap.val();
       if(!p) return;
-      if(p.status === 'paid') finish('Recharge confirmée', formatFCFA(p.amount) + ' ont été ajoutés à votre solde de commission.');
+      if(p.status === 'paid') finish(p.thenPayCommission ? 'Commission payée' : 'Recharge confirmée', (p.thenPayCommission && p.paidCommission > 0) ? 'Votre commission de ' + formatFCFA(p.paidCommission) + ' est payée. Vous pouvez continuer à accepter des livraisons.' : formatFCFA(p.amount) + ' ont été ajoutés à votre solde de commission.');
       else if(p.status === 'amount_mismatch') finish('Paiement à vérifier', 'Le montant reçu ne correspond pas à votre recharge. Le service client va la vérifier.');
       else if(p.status === 'failed' || p.status === 'failed_to_create') finish('Paiement non abouti', 'Le paiement n\'a pas abouti. Vous pouvez réessayer.');
     }
@@ -5284,7 +5361,7 @@
     // Un Reel n'est repris que si sa boutique existe dans le catalogue, donc
     // approuvée — même garde-fou que pour les produits (voir rebuildCatalog).
     const list = Object.entries(realReelsRaw)
-      .filter(([, r]) => r && r.videoUrl && shopsByKey[r.shopId])
+      .filter(([id, r]) => r && r.videoUrl && shopsByKey[r.shopId] && !jlIsBlocked(r.shopId) && !jlIsHiddenReel(id))
       .sort((a, b) => reelScore(b[0], b[1]) - reelScore(a[0], a[1]));
     const renderKey = list.map(([id]) => id).join(',');
     if(renderKey === lastReelsRenderKey && !force) return;
@@ -5326,6 +5403,7 @@
               <i data-feather="share-2" style="width:25px;height:25px"></i>
               <span>Partager</span>
             </button>
+            <button class="reel-rail-btn" onclick="jlOpenReelMenu('${id}')" style="background:none;border:none;color:#fff;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11.5px;font-weight:700"><i data-feather="more-horizontal" style="width:25px;height:25px"></i><span>Plus</span></button>
             ${r.productKey ? `
               <button class="reel-rail-btn" onclick="buyFromReel('${r.productKey}','${id}')" style="background:var(--yellow);border:none;color:#0D0D0C;display:flex;flex-direction:column;align-items:center;gap:1px;font-size:10.5px;font-weight:800;border-radius:12px;padding:7px 6px;width:42px">
                 <i data-feather="shopping-bag" style="width:19px;height:19px"></i>
@@ -5484,15 +5562,21 @@
   function renderReelComments(snap){
     const el = document.getElementById('reelCommentsList');
     if(!el) return;
-    const all = Object.values(snap.val() || {}).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    window.__jlLastCommentsSnap = snap;
+    const me = (typeof appAuth !== 'undefined' && appAuth.currentUser) ? appAuth.currentUser.uid : null;
+    const all = Object.entries(snap.val() || {})
+      .map(([id, c]) => Object.assign({}, c, { __id: id }))
+      .filter((c) => !jlIsBlocked(c.uid) && !jlIsHiddenComment(openReelCommentsId, c.__id))
+      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
     el.innerHTML = all.length === 0
       ? '<p class="section-sub">Soyez le premier à commenter.</p>'
       : all.map((c) => `
-          <div>
-            <b style="font-size:13px">${escapeHtml(c.name || 'Utilisateur')}</b>
-            <p style="font-size:13.5px;margin-top:2px">${escapeHtml(c.text || '')}</p>
-          </div>
-        `).join('');
+        <div>
+          <b style="font-size:13px">${escapeHtml(c.name || 'Utilisateur')}</b>
+          <p style="font-size:13.5px;margin-top:2px">${escapeHtml(c.text || '')}</p>
+          ${c.uid && c.uid !== me ? `<div class="jl-cmt-actions"><a data-jl="report-comment" data-cid="${escapeHtml(c.__id)}">Signaler</a> · <a data-jl="block-comment" data-cid="${escapeHtml(c.__id)}">Bloquer</a></div>` : ''}
+        </div>
+      `).join('');
     el.scrollTop = el.scrollHeight;
   }
 
@@ -7951,6 +8035,259 @@
     hideInstallBanner();
   });
   // === INSTALL-PWA:END ===
+
+// ================= CONFORMITÉ GOOGLE PLAY : conditions, signalement, blocage, suspension, suppression de compte =================
+var JL_LEGAL_BASE = 'https://jelivre.shop', JL_TERMS_VERSION = '2026-11-12', JL_CONTACT = 'bonaventureilboudo824@gmail.com';
+var jlTermsPending = null, jlReportCtx = null, jlReelMenuCtx = null, jlBlocksRef = null, jlDeleteRole = null;
+window.myBlocks = {}; window.__jlTermsOk = {}; window.__jlLastCommentsSnap = null;
+function jlOpenLegal(page){ const a = document.createElement('a'); a.href = JL_LEGAL_BASE + '/' + page + '.html'; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove(); }
+function jlOpenModal(id){ const m = document.getElementById(id); if(m) m.classList.add('open'); }
+function jlCloseModal(id){ const m = document.getElementById(id); if(m) m.classList.remove('open'); }
+function jlTermsChecked(id){ const el = document.getElementById(id); return !!(el && el.checked); }
+function jlTs(){ return firebase.database.ServerValue.TIMESTAMP; }
+function jlJsonGet(key, fb){ try { const v = JSON.parse(localStorage.getItem(key) || 'null'); return v == null ? fb : v; } catch(e){ return fb; } }
+function jlJsonSet(key, v){ try { localStorage.setItem(key, JSON.stringify(v)); } catch(e){} }
+window.jlOpenLegal = jlOpenLegal; window.jlCloseModal = jlCloseModal;
+
+// ---- Acceptation des conditions (obligatoire avant de commenter ou de publier)
+function jlHasTerms(auth, db){
+  const u = auth.currentUser; if(!u) return Promise.resolve(false);
+  if(window.__jlTermsOk[u.uid]) return Promise.resolve(true);
+  return db.ref('termsAcceptances/' + u.uid).once('value').then((s) => { if(s.exists()) window.__jlTermsOk[u.uid] = true; return s.exists(); }).catch(() => false);
+}
+function jlRecordTerms(auth, db){
+  const u = auth.currentUser; if(!u) return Promise.resolve();
+  return db.ref('termsAcceptances/' + u.uid).set({ version: JL_TERMS_VERSION, acceptedAt: jlTs() }).then(() => { window.__jlTermsOk[u.uid] = true; });
+}
+function jlEnsureTerms(auth, db){
+  return jlHasTerms(auth, db).then((ok) => {
+    if(ok) return true;
+    return new Promise((resolve) => { jlTermsPending = { auth, db, resolve }; jlOpenModal('jlTermsModal'); });
+  });
+}
+function jlTermsAnswer(accepted){
+  const p = jlTermsPending; jlTermsPending = null; jlCloseModal('jlTermsModal');
+  if(!p) return;
+  if(!accepted){ p.resolve(false); return; }
+  jlRecordTerms(p.auth, p.db).then(() => p.resolve(true)).catch((e) => { alert("Impossible d'enregistrer votre acceptation : " + e.message); p.resolve(false); });
+}
+window.jlTermsAnswer = jlTermsAnswer;
+(function(){
+  const origPost = window.postReelComment;
+  window.postReelComment = function(){
+    if(!appAuth.currentUser) return origPost();
+    jlEnsureTerms(appAuth, firebase.database()).then((ok) => { if(ok) origPost(); });
+  };
+  const origCreate = window.createShopReel;
+  window.createShopReel = function(btn){
+    if(!window.currentVendorUser) return origCreate(btn);
+    jlEnsureTerms(vendorAuth, vendorDb).then((ok) => { if(ok) origCreate(btn); });
+  };
+})();
+
+// ---- Contenus masqués par l'utilisateur et blocages
+function jlHidden(){ const h = jlJsonGet('jl_hidden_content', { reels: {}, comments: {} }); h.reels = h.reels || {}; h.comments = h.comments || {}; return h; }
+function jlIsHiddenReel(id){ return !!jlHidden().reels[id]; }
+function jlIsHiddenComment(reelId, cid){ return !!jlHidden().comments[reelId + '/' + cid]; }
+function jlHideReel(id){ const h = jlHidden(); h.reels[id] = 1; jlJsonSet('jl_hidden_content', h); }
+function jlHideComment(reelId, cid){ const h = jlHidden(); h.comments[reelId + '/' + cid] = 1; jlJsonSet('jl_hidden_content', h); }
+function jlIsBlocked(uid){ return !!(uid && window.myBlocks && window.myBlocks[uid]); }
+function jlRefreshAfterBlocks(){
+  try { if(typeof realReelsQuery !== 'undefined' && realReelsQuery && typeof renderReelsFeed === 'function') renderReelsFeed(true); } catch(e){}
+  try { if(window.__jlLastCommentsSnap) renderReelComments(window.__jlLastCommentsSnap); } catch(e){}
+}
+function jlStopBlocks(){ if(jlBlocksRef){ try { jlBlocksRef.off(); } catch(e){} jlBlocksRef = null; } window.myBlocks = {}; }
+function jlStartBlocks(uid){
+  jlStopBlocks();
+  jlBlocksRef = firebase.database().ref('blocks/' + uid);
+  jlBlocksRef.on('value', (snap) => {
+    window.myBlocks = snap.val() || {};
+    jlRefreshAfterBlocks();
+    const m = document.getElementById('jlBlockedModal'); if(m && m.classList.contains('open')) jlRenderBlocked();
+  }, () => {});
+}
+function jlBlockUser(uid, name){
+  const u = appAuth.currentUser;
+  if(!u){ alert('Connectez-vous pour bloquer un utilisateur.'); return; }
+  if(!uid || uid === u.uid) return;
+  if(!confirm('Bloquer ' + (name || 'cet utilisateur') + ' ? Vous ne verrez plus ses Reels ni ses commentaires. Vous pourrez le débloquer dans Profil → Utilisateurs bloqués.')) return;
+  firebase.database().ref('blocks/' + u.uid + '/' + uid).set({ name: String(name || 'Utilisateur').slice(0, 80), at: jlTs() }).catch((e) => alert('Erreur : ' + e.message));
+}
+function jlUnblock(uid){ const u = appAuth.currentUser; if(!u) return; firebase.database().ref('blocks/' + u.uid + '/' + uid).remove().catch((e) => alert('Erreur : ' + e.message)); }
+function jlRenderBlocked(){
+  const el = document.getElementById('jlBlockedList'); if(!el) return;
+  const items = Object.entries(window.myBlocks || {});
+  el.innerHTML = items.length ? items.map(([uid, b]) => '<div class="jl-blocked-row"><span>' + escapeHtml((b && b.name) || 'Utilisateur') + '</span><button data-jl-unblock="' + escapeHtml(uid) + '">Débloquer</button></div>').join('') : "<p>Vous n'avez bloqué personne.</p>";
+}
+function jlOpenBlocked(){ if(!appAuth.currentUser){ alert('Connectez-vous pour voir vos blocages.'); return; } jlRenderBlocked(); jlOpenModal('jlBlockedModal'); }
+window.jlOpenBlocked = jlOpenBlocked;
+
+// ---- Signalement d'un Reel ou d'un commentaire
+function jlOpenReport(ctx){
+  if(!appAuth.currentUser){ alert('Connectez-vous pour signaler un contenu.'); return; }
+  jlReportCtx = ctx;
+  document.querySelectorAll('input[name="jlReason"]').forEach((r) => { r.checked = false; });
+  document.getElementById('jlReportDetails').value = ''; document.getElementById('jlReportErr').textContent = '';
+  document.getElementById('jlReportSend').disabled = false; jlOpenModal('jlReportModal');
+}
+function jlSubmitReport(){
+  const ctx = jlReportCtx, u = appAuth.currentUser, err = document.getElementById('jlReportErr');
+  if(!ctx || !u) return;
+  const sel = document.querySelector('input[name="jlReason"]:checked');
+  if(!sel){ err.textContent = 'Choisissez un motif.'; return; }
+  const btn = document.getElementById('jlReportSend'); btn.disabled = true; err.textContent = '';
+  const rep = { type: ctx.type, reason: sel.value, reporterUid: u.uid, status: 'open', createdAt: jlTs() };
+  if(ctx.reelId) rep.reelId = String(ctx.reelId).slice(0, 80);
+  if(ctx.commentId) rep.commentId = String(ctx.commentId).slice(0, 80);
+  if(ctx.targetUid) rep.targetUid = String(ctx.targetUid).slice(0, 80);
+  if(ctx.targetName) rep.targetName = String(ctx.targetName).slice(0, 80);
+  if(ctx.excerpt) rep.excerpt = String(ctx.excerpt).slice(0, 300);
+  const details = (document.getElementById('jlReportDetails').value || '').trim().slice(0, 300); if(details) rep.details = details;
+  const id = 'rep_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  firebase.database().ref('reports/' + id).set(rep).then(() => {
+    if(ctx.type === 'reel') jlHideReel(ctx.reelId); else jlHideComment(ctx.reelId, ctx.commentId);
+    jlCloseModal('jlReportModal'); jlRefreshAfterBlocks();
+    alert('Merci. Votre signalement a été transmis à notre équipe. Ce contenu est masqué pour vous.');
+  }).catch((e) => { btn.disabled = false; err.textContent = "Impossible d'envoyer le signalement : " + e.message; });
+}
+function jlOpenReelMenu(reelId){
+  const r = (typeof realReelsRaw !== 'undefined' && realReelsRaw[reelId]) || null; if(!r) return;
+  const shop = (typeof shopsByKey !== 'undefined' && shopsByKey[r.shopId]) || {};
+  jlReelMenuCtx = { reelId, shopId: r.shopId, shopName: shop.name || r.shopName || 'Boutique', caption: r.caption || '' };
+  jlOpenModal('jlReelMenu');
+}
+function jlReelMenuReport(){ const c = jlReelMenuCtx; jlCloseModal('jlReelMenu'); if(!c) return; jlOpenReport({ type: 'reel', reelId: c.reelId, targetUid: c.shopId, targetName: c.shopName, excerpt: c.caption }); }
+function jlReelMenuBlock(){ const c = jlReelMenuCtx; jlCloseModal('jlReelMenu'); if(!c) return; jlBlockUser(c.shopId, c.shopName); }
+Object.assign(window, { jlOpenReelMenu, jlReelMenuReport, jlReelMenuBlock, jlSubmitReport });
+document.addEventListener('click', (ev) => {
+  const tgt = ev.target && ev.target.closest ? ev.target : null; if(!tgt) return;
+  const t = tgt.closest('[data-jl]');
+  if(t){
+    const act = t.getAttribute('data-jl'), cid = t.getAttribute('data-cid');
+    const all = window.__jlLastCommentsSnap && window.__jlLastCommentsSnap.val ? window.__jlLastCommentsSnap.val() : null, c = all ? all[cid] : null;
+    if(c && act === 'report-comment') jlOpenReport({ type: 'comment', reelId: openReelCommentsId, commentId: cid, targetUid: c.uid, targetName: c.name, excerpt: c.text });
+    if(c && act === 'block-comment') jlBlockUser(c.uid, c.name);
+    return;
+  }
+  const ub = tgt.closest('[data-jl-unblock]'); if(ub) jlUnblock(ub.getAttribute('data-jl-unblock'));
+});
+
+// ---- Compte suspendu : déconnexion immédiate
+function jlEnforceBan(auth, db){
+  const u = auth.currentUser; if(!u) return;
+  db.ref('bans/' + u.uid).once('value').then((s) => {
+    if(s.exists()){ alert("Votre compte a été suspendu pour non-respect des conditions d'utilisation. Pour contester cette décision : " + JL_CONTACT); auth.signOut(); }
+  }).catch(() => {});
+}
+function jlOnClientAuth(user){
+  jlSetPresence('client', appAuth, firebase.database(), !!user);
+  if(!user){ jlStopBlocks(); return; }
+  if(window.__jlPendingTerms === 'client'){ window.__jlPendingTerms = null; jlRecordTerms(appAuth, firebase.database()).catch(() => {}); }
+  jlEnforceBan(appAuth, firebase.database()); jlStartBlocks(user.uid);
+}
+function jlOnVendorAuth(user){ jlSetPresence('vendor', vendorAuth, vendorDb, !!user); if(user) jlEnforceBan(vendorAuth, vendorDb); }
+function jlOnDriverAuth(user){ jlSetPresence('driver', driverAuth, driverDb, !!user); }
+function jlOnEntrepriseAuth(user){ jlSetPresence('entreprise', entrepriseAuth, entrepriseDb, !!user); }
+
+// ---- Suppression de compte (client, boutique, livreur, entreprise)
+function jlRoleAuth(role){ return ({ client: appAuth, vendor: vendorAuth, driver: driverAuth, entreprise: entrepriseAuth })[role] || null; }
+function jlOpenDelete(role){
+  const a = jlRoleAuth(role);
+  if(!a || !a.currentUser){ alert("Connectez-vous d'abord à cet espace pour supprimer votre compte."); return; }
+  jlDeleteRole = role;
+  ['jlDeletePwd', 'jlDeleteTyped'].forEach((id) => { document.getElementById(id).value = ''; });
+  document.getElementById('jlDeleteErr').textContent = ''; document.getElementById('jlDeleteGo').disabled = false; jlOpenModal('jlDeleteModal');
+}
+async function jlConfirmDelete(){
+  const a = jlRoleAuth(jlDeleteRole), err = document.getElementById('jlDeleteErr'), btn = document.getElementById('jlDeleteGo');
+  if(!a || !a.currentUser){ err.textContent = 'Vous êtes déconnecté. Reconnectez-vous puis réessayez.'; return; }
+  const pwd = document.getElementById('jlDeletePwd').value, typed = (document.getElementById('jlDeleteTyped').value || '').trim();
+  if(!pwd){ err.textContent = 'Entrez votre mot de passe.'; return; }
+  if(typed !== 'SUPPRIMER'){ err.textContent = 'Écrivez exactement SUPPRIMER pour confirmer.'; return; }
+  btn.disabled = true; err.textContent = 'Vérification…';
+  const user = a.currentUser;
+  try { await user.reauthenticateWithCredential(firebase.auth.EmailAuthProvider.credential(user.email, pwd)); }
+  catch(e){ btn.disabled = false; err.textContent = (e && /wrong-password|invalid-credential|invalid-login/.test(e.code || '')) ? 'Mot de passe incorrect.' : 'Impossible de vérifier votre mot de passe : ' + ((e && e.message) || 'erreur'); return; }
+  err.textContent = 'Suppression en cours…';
+  try { await serverCallable(a, 'deleteAccount')({ confirm: 'SUPPRIMER' }); }
+  catch(e){ btn.disabled = false; err.textContent = (e && e.message) || 'Suppression impossible.'; return; }
+  try { await Promise.all([appAuth, vendorAuth, driverAuth, entrepriseAuth].map((x) => Promise.resolve(x.signOut()).catch(() => {}))); } catch(e){}
+  try { localStorage.clear(); } catch(e){}
+  alert("Votre compte a été supprimé. Merci d'avoir utilisé Je Livre.");
+  location.reload();
+}
+Object.assign(window, { jlOpenDelete, jlConfirmDelete });
+
+// ---- Présence en ligne : permet à l'admin de compter les personnes connectées en ce moment
+var jlPresence = {};
+function jlDropPresence(role){
+  const prev = jlPresence[role]; if(!prev) return;
+  try { prev.conn.off('value', prev.handler); } catch(e){}
+  try { prev.ref.remove(); } catch(e){}
+  jlPresence[role] = null;
+}
+function jlSetPresence(role, auth, db, on){
+  jlDropPresence(role);
+  if(!on || !auth || !auth.currentUser) return;
+  const uid = auth.currentUser.uid, ref = db.ref('presence/' + role + '/' + uid), conn = db.ref('.info/connected');
+  const handler = (s) => { if(s.val() === true){ try { ref.onDisconnect().remove(); } catch(e){} ref.set({ at: jlTs() }).catch(() => {}); } };
+  conn.on('value', handler); jlPresence[role] = { ref, conn, handler };
+}
+// Déconnexion volontaire : on retire la présence AVANT de fermer la session (sinon la règle l'interdirait).
+(function(){
+  [['appLogout', 'client'], ['vendorLogout', 'vendor'], ['driverLogout', 'driver'], ['entrepriseLogout', 'entreprise']].forEach(([fn, role]) => {
+    const orig = window[fn]; if(typeof orig !== 'function') return;
+    window[fn] = function(){ jlDropPresence(role); return orig.apply(this, arguments); };
+  });
+})();
+
+// ================= PORTEFEUILLE DE COMMISSION DU LIVREUR =================
+// Payer la commission par Mobile Money : le serveur calcule le montant et solde la commission
+// automatiquement dès que HorusPay confirme le paiement (aucune déclaration « j'ai payé »).
+async function payCommission(){
+  const d = window.currentDriverUser;
+  if(!d || !(d.pendingCommission > 0)) return;
+  if(!PAYMENTS.enabled){ alert("Le paiement en ligne n'est pas encore disponible."); return; }
+  showPayOverlay('Préparation du paiement…', 'Ne fermez pas cette page.', false);
+  try {
+    const res = await serverCallable(driverAuth, 'createPayment')({ payCommission: true });
+    const data = res && res.data ? res.data : {};
+    if(!data.paymentUrl) throw new Error('no-url');
+    try { sessionStorage.setItem('je_livre_pending_tx', data.txId); sessionStorage.setItem('je_livre_pending_tx_kind', 'commissionTopup'); } catch(e){ /* ignoré */ }
+    showPayOverlay('Redirection…', 'Vous allez être redirigé vers la page de paiement sécurisée. Votre commission sera réglée automatiquement dès que le paiement sera confirmé.', false);
+    window.location.href = data.paymentUrl;
+  } catch(e){
+    closePayOverlay();
+    const code = e && e.code ? String(e.code) : '';
+    alert(code === 'unavailable' ? 'Impossible de joindre le service de paiement. Vérifiez votre connexion et réessayez.' : (code === 'internal' || !e || !e.message) ? 'Le paiement est momentanément indisponible. Réessayez dans un instant.' : e.message);
+  }
+}
+window.payCommission = payCommission;
+
+// Retrait du solde : virement Mobile Money immédiat vers le numéro enregistré du livreur.
+function jlMaskPhone(p){ const d = String(p || '').replace(/\D/g, ''); return d.length >= 6 ? d.slice(0, 2) + ' •• •• ' + d.slice(-2) : 'votre numéro enregistré'; }
+async function withdrawCommissionBalance(){
+  const d = window.currentDriverUser; if(!d) return;
+  const available = Math.max(0, (d.commissionBalance || 0) - (d.pendingCommission || 0));
+  const max = Math.min(available, 200000);
+  if(available < 500){ alert('Aucun montant retirable pour le moment (minimum 500 F, après votre commission en attente).'); return; }
+  const raw = prompt('Montant à retirer (de 500 à ' + max + ' F) :', String(max));
+  if(!raw) return;
+  const amount = parseInt(String(raw).replace(/\s/g, ''), 10);
+  if(!amount || amount < 500 || amount > max){ alert('Montant invalide : entre 500 et ' + max + ' F.'); return; }
+  const net = prompt('Réseau Mobile Money : tapez "orange" pour Orange Money, ou "moov" pour Moov Money.', 'orange');
+  if(!net) return;
+  const network = /moov/i.test(net) ? 'moov_bf' : 'orange_bf_direct';
+  if(!confirm('Retirer ' + formatFCFA(amount) + ' vers ' + jlMaskPhone(d.phone) + ' ? Le virement part tout de suite.')) return;
+  try {
+    const res = await serverCallable(driverAuth, 'requestCommissionWithdrawal')({ amount, network });
+    const out = (res && res.data) || {};
+    alert('Retrait effectué : ' + formatFCFA(out.netAmount || amount) + ' envoyés sur votre numéro' + ((out.fees || 0) > 0 ? ' (frais : ' + formatFCFA(out.fees) + ')' : '') + '. Nouveau solde : ' + formatFCFA(out.balanceLeft || 0) + '.');
+  } catch(e){
+    alert((e && e.message) ? e.message : 'Retrait impossible pour le moment. Réessayez dans un instant.');
+  }
+}
+window.withdrawCommissionBalance = withdrawCommissionBalance;
 </script>
 </body>
 </html>
