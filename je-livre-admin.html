@@ -170,6 +170,17 @@
   .chat-bubble-admin{ max-width:78%; padding:9px 13px; border-radius:14px; font-size:13px; line-height:1.4; }
   .chat-bubble-admin.them{ align-self:flex-start; background:var(--bg); color:var(--text); border-bottom-left-radius:4px; }
   .chat-bubble-admin.me{ align-self:flex-end; background:var(--black); color:#fff; border-bottom-right-radius:4px; }
+
+/* ---- Signalements ---- */
+.rep-filters{display:flex;gap:8px;margin:6px 0 14px}.rep-btn{border:1px solid var(--border);background:#fff;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit}
+.rep-btn.active{background:var(--yellow,#FFC629);border-color:var(--yellow,#FFC629)}.rep-btn.danger{color:#B3261E;border-color:#F3C6C6}.rep-btn:disabled{opacity:.45;cursor:not-allowed}
+.rep-card{border:1px solid var(--border);border-radius:12px;padding:14px;margin-bottom:12px;background:#fff}
+.rep-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.rep-time{margin-left:auto;color:#777;font-size:12px}
+.rep-type{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:999px;background:#EEE9D8}.rep-type.reel{background:#FFE9A8}.rep-type.comment{background:#DDEBFF}
+.rep-excerpt{margin:10px 0 4px;padding:9px 12px;background:#F7F5EC;border-radius:8px;font-size:13.5px}.rep-details,.rep-meta{font-size:12.5px;color:#555;margin-top:6px}
+.rep-banned{color:#B3261E;font-weight:700}.rep-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.rep-done{margin-top:10px;font-size:12.5px;color:#2f6b3a;font-weight:600}
+.plat-h{margin:18px 0 8px;font-size:12.5px;color:#666;text-transform:uppercase;letter-spacing:.05em}.plat-note{font-size:12.5px;color:#666;margin-top:14px;line-height:1.55}.plat-error{background:#FBEAEA;border:1px solid #F3C6C6;color:#8a1f1f;border-radius:8px;padding:9px 12px;font-size:13px;margin:8px 0}
+.rep-ban-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 2px;border-bottom:1px solid var(--border);font-size:13px}
 </style>
 </head>
 <body>
@@ -182,6 +193,7 @@
     <li class="nav-item" data-page="registrations" onclick="switchAdminPage('registrations')"><i data-feather="user-plus"></i>Inscriptions<span class="badge-count" id="navRegCount">0</span></li>
     <li class="nav-item" data-page="deliveries" onclick="switchAdminPage('deliveries')"><i data-feather="package"></i>Livraisons en cours</li>
     <li class="nav-item" data-page="support" onclick="switchAdminPage('support')"><i data-feather="headphones"></i>Service client<span class="badge-count" id="navSupportCount">0</span></li>
+      <li class="nav-item" data-page="reports" onclick="switchAdminPage('reports')"><i data-feather="flag"></i>Signalements<span class="badge-count" id="navReportsCount">0</span></li>
     <li class="nav-item" data-page="ads" onclick="switchAdminPage('ads')"><i data-feather="image"></i>Publicités</li>
     <li class="nav-item" data-page="withdrawals" onclick="switchAdminPage('withdrawals')"><i data-feather="arrow-up-right"></i>Retraits<span class="badge-count" id="navWithdrawalsCount">0</span></li>
     <li class="nav-item" data-page="commissions" onclick="switchAdminPage('commissions')"><i data-feather="percent"></i>Commissions<span class="badge-count" id="navCommissionsCount">0</span></li>
@@ -208,6 +220,15 @@
 
     <!-- TABLEAU DE BORD -->
     <div class="page active" id="page-overview">
+    <div class="panel" id="platformPanel">
+      <div class="panel-head"><h2>Vue d'ensemble de la plateforme</h2><span class="sub" id="platformUpdated">—</span><button class="rep-btn" style="margin-left:auto" onclick="refreshPlatformStats()">Actualiser</button></div>
+      <div class="plat-error" id="platformError" style="display:none"></div>
+      <h3 class="plat-h">Personnes inscrites</h3><div class="kpi-grid" id="peopleGrid"></div>
+      <h3 class="plat-h">En ligne en ce moment</h3><div class="kpi-grid" id="onlineGrid"></div>
+      <h3 class="plat-h">Argent</h3><div class="kpi-grid" id="moneyGrid"></div>
+      <p class="plat-note"><b>Comment lire ces chiffres.</b> Le <b>revenu net</b> additionne vos commissions enregistrées (10 % et fixe) et retire les parrainages versés ; c'est un cumul des compteurs de l'application, pas un solde bancaire. L'<b>argent détenu pour d'autres</b> (garanties des livreurs, soldes de parrainage, retraits en attente) ne vous appartient pas. Le <b>reçu en ligne</b> est brut : il comprend de l'argent à reverser et les garanties. Les paiements en espèces n'y figurent pas. Le solde réel de votre compte de paiement se consulte chez HorusPay. « En ligne » ne compte que les personnes qui utilisent la nouvelle version de l'application.</p>
+    </div>
+    
       <div class="kpi-grid">
         <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="radio"></i></div></div><b id="kpiOnline">—</b><span>Livreurs en ligne</span></div>
         <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="package"></i></div></div><b id="kpiDeliveries">—</b><span>Livraisons en cours</span></div>
@@ -221,6 +242,7 @@
           <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="percent"></i></div></div><b id="kpiCommissionSimple">—</b><span>Commission 10% (simple/marketplace)</span></div>
           <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="truck"></i></div></div><b id="kpiCommissionFlat">—</b><span>Commission fixe (Express/Groupée)</span></div>
           <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="gift"></i></div></div><b id="kpiReferralPayouts">—</b><span>Reversé aux parrains</span></div>
+          <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="credit-card"></i></div></div><b id="kpiCommissionWallet">—</b><span>Commission payée par le solde / Mobile Money</span></div>
           <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="trending-up"></i></div></div><b id="kpiCommissionNet">—</b><span>Commission nette</span></div>
           <div class="kpi-card"><div class="top"><div class="ic"><i data-feather="shield"></i></div></div><b id="kpiDriverGuarantees">—</b><span>Garanties livreurs détenues (argent des livreurs, pas un revenu)</span></div>
         </div>
@@ -318,7 +340,20 @@
       <div id="supportList"><div class="empty-state">Chargement…</div></div>
     </div>
 
-    <!-- PUBLICITÉS -->
+    <!-- SIGNALEMENTS -->
+  <div class="page" id="page-reports">
+    <div class="panel">
+      <div class="panel-head"><h2>Signalements de contenu</h2><span class="sub">Reels et commentaires signalés par les utilisateurs — à examiner rapidement</span></div>
+      <div class="rep-filters"><button class="rep-btn" data-repfilter="open" onclick="setReportFilter('open')">À traiter</button><button class="rep-btn" data-repfilter="done" onclick="setReportFilter('done')">Traités</button></div>
+      <div id="reportsList"><div class="empty-state">Chargement…</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>Comptes suspendus</h2><span class="sub">Un compte suspendu est déconnecté et ne peut plus publier ni commenter</span></div>
+      <div id="bansList"></div>
+    </div>
+  </div>
+
+  <!-- PUBLICITÉS -->
     <div class="page" id="page-ads">
       <div class="panel">
         <div class="panel-head"><h2>Nouvelle publicité</h2></div>
@@ -485,7 +520,7 @@
   function switchAdminPage(page){
     document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + page));
     document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.page === page));
-    const titles = { overview:'Tableau de bord', live:'Connectés en direct', registrations:'Inscriptions', deliveries:'Livraisons en cours', support:'Service client', ads:'Publicités', withdrawals:'Retraits', commissions:'Commissions', remittances:'Reversements', payments:'Paiements' };
+    const titles = { overview:'Tableau de bord', reports:'Signalements', live:'Connectés en direct', registrations:'Inscriptions', deliveries:'Livraisons en cours', support:'Service client', ads:'Publicités', withdrawals:'Retraits', commissions:'Commissions', remittances:'Reversements', payments:'Paiements' };
     document.getElementById('pageTitle').textContent = titles[page] || '';
     if(page === 'live') setTimeout(() => { if(liveMap) liveMap.invalidateSize(); }, 100);
     if(page === 'ads') initAdForm();
@@ -1022,11 +1057,11 @@
       return;
     }
     entries.sort((a, b) => (b[1].requestedAt || 0) - (a[1].requestedAt || 0));
-    const statusLabels = { pending: 'En attente', paid: 'Versé', rejected: 'Refusé', processing: 'Virement en cours' };
+    const statusLabels = { pending: 'En attente', paid: 'Versé', rejected: 'Refusé', processing: 'Virement en cours', initiating: 'Virement en préparation', failed: 'Échec (solde remboursé)' };
     const networkLabels = { orange_bf_direct: 'Orange Money', moov_bf: 'Moov Money' };
     tbody.innerHTML = entries.map(([id, w]) => `
       <tr>
-        <td><b>${w.kind === 'driver' ? 'Livreur · ' + escapeHtml(w.driverId) : escapeHtml(w.shopName || w.shopId)}</b>${w.kind === 'driver' ? `<br><span style="font-size:11.5px;color:var(--text-soft)">${networkLabels[w.network] || escapeHtml(w.network || '')}</span>` : ''}</td>
+        <td><b>${w.kind === 'commissionBalance' ? 'Livreur · solde de commission · ' + escapeHtml(w.driverId) : w.kind === 'driver' ? 'Livreur · ' + escapeHtml(w.driverId) : escapeHtml(w.shopName || w.shopId)}</b>${(w.kind === 'driver' || w.kind === 'commissionBalance') ? `<br><span style="font-size:11.5px;color:var(--text-soft)">${networkLabels[w.network] || escapeHtml(w.network || '')}</span>` : ''}</td>
         <td>${formatFCFA(w.amount)}</td>
         <td>${escapeHtml(w.phone || '—')}</td>
         <td><span class="pill ${w.status === 'paid' ? 'approved' : w.status === 'rejected' ? 'rejected' : 'pending'}">${statusLabels[w.status] || w.status}</span>${w.lastError ? `<br><span style="font-size:11px;color:#B3261E">${escapeHtml(w.lastError)}</span>` : ''}</td>
@@ -1125,9 +1160,10 @@
       if(simpleEl) simpleEl.textContent = formatFCFA(simple);
       if(flatEl) flatEl.textContent = formatFCFA(flat);
       if(payoutsEl) payoutsEl.textContent = '− ' + formatFCFA(payouts);
-      if(netEl) netEl.textContent = formatFCFA(simple + flat - payouts);
+      const fromWallet = s.commissionFromBalance || 0; const walletEl = document.getElementById('kpiCommissionWallet'); if(walletEl) walletEl.textContent = formatFCFA(fromWallet);
+      if(netEl) netEl.textContent = formatFCFA(simple + flat + fromWallet - payouts);
       // Soldes de commission rechargés par les livreurs, moins ce qui a déjà servi à payer leur commission.
-      if(guaranteeEl) guaranteeEl.textContent = formatFCFA(Math.max(0, (s.commissionTopups || 0) - (s.commissionFromBalance || 0)));
+      if(guaranteeEl) guaranteeEl.textContent = formatFCFA(Math.max(0, (s.commissionTopups || 0) - (s.commissionFromBalance || 0) - (s.commissionWithdrawn || 0)));
     });
   }
 
@@ -1421,14 +1457,148 @@
     });
   }
 
-  // ================= Connexion & rôles (Firebase Authentication) =================
+  // ================= Signalements de contenu (modération) =================
+let allReports = {}, allBans = {}, reportFilter = 'open';
+const REPORT_REASONS = { inapproprie: 'Contenu inapproprié ou choquant', violence_haine: 'Violence, haine ou harcèlement', sexuel: 'Contenu sexuel ou nudité', arnaque: 'Arnaque, faux produit ou usurpation', interdit: 'Produit interdit (alcool, tabac, armes, drogues…)', spam: 'Spam ou publicité', autre: 'Autre' };
+const REPORT_ACTIONS = { contenu_supprime: 'Contenu supprimé', compte_suspendu: 'Compte suspendu', contenu_supprime_et_compte_suspendu: 'Contenu supprimé et compte suspendu', sans_suite: 'Classé sans suite' };
+function repAdminUid(){ return (currentAdminUser && currentAdminUser.id) || (auth && auth.currentUser && auth.currentUser.uid) || null; }
+function repShort(uid){ return uid ? String(uid).slice(0, 8) + '…' : '—'; }
+function setReportFilter(f){ reportFilter = f; renderReports(); }
+window.setReportFilter = setReportFilter;
+function reportCardHtml(id, r){
+  const isOpen = r.status === 'open';
+  const banned = r.targetUid && allBans[r.targetUid];
+  const typeLabel = r.type === 'reel' ? 'Reel' : 'Commentaire';
+  const canBan = !!r.targetUid && !banned;
+  return `
+    <div class="rep-card">
+      <div class="rep-head"><span class="rep-type ${r.type === 'reel' ? 'reel' : 'comment'}">${typeLabel}</span><b>${escapeHtml(REPORT_REASONS[r.reason] || r.reason || '—')}</b><span class="rep-time">${timeAgo(r.createdAt)}</span></div>
+      ${r.excerpt ? `<div class="rep-excerpt">« ${escapeHtml(r.excerpt)} »</div>` : ''}
+      ${r.details ? `<div class="rep-details">Précisions du signalement : ${escapeHtml(r.details)}</div>` : ''}
+      <div class="rep-meta">Auteur : <b>${escapeHtml(r.targetName || '—')}</b> (${escapeHtml(repShort(r.targetUid))})${banned ? ' · <span class="rep-banned">compte déjà suspendu</span>' : ''} · Signalé par ${escapeHtml(repShort(r.reporterUid))}</div>
+      ${isOpen ? `<div class="rep-actions">
+        ${r.type === 'reel' ? `<button class="rep-btn" onclick="reportOpenVideo('${escapeHtml(id)}')">Voir la vidéo</button>` : ''}
+        <button class="rep-btn danger" onclick="reportRemoveContent('${escapeHtml(id)}', false)">Supprimer le contenu</button>
+        <button class="rep-btn danger" ${canBan ? '' : 'disabled'} onclick="reportRemoveContent('${escapeHtml(id)}', true)">Supprimer + suspendre l'auteur</button>
+        <button class="rep-btn" ${canBan ? '' : 'disabled'} onclick="reportBanOnly('${escapeHtml(id)}')">Suspendre l'auteur</button>
+        <button class="rep-btn" onclick="reportDismiss('${escapeHtml(id)}')">Classer sans suite</button>
+      </div>` : `<div class="rep-done">${escapeHtml(REPORT_ACTIONS[r.action] || r.status)} · ${r.resolvedAt ? timeAgo(r.resolvedAt) : ''}</div>`}
+    </div>`;
+}
+function renderReports(){
+  const el = document.getElementById('reportsList'); if(!el) return;
+  const entries = Object.entries(allReports);
+  const openCount = entries.filter(([, r]) => r && r.status === 'open').length;
+  const badge = document.getElementById('navReportsCount'); if(badge) badge.textContent = openCount;
+  document.querySelectorAll('[data-repfilter]').forEach((b) => b.classList.toggle('active', b.dataset.repfilter === reportFilter));
+  const list = entries.filter(([, r]) => r && (reportFilter === 'open' ? r.status === 'open' : r.status !== 'open')).sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+  el.innerHTML = list.length ? list.map(([id, r]) => reportCardHtml(id, r)).join('') : '<div class="empty-state"><i data-feather="flag"></i><div>' + (reportFilter === 'open' ? 'Aucun signalement à traiter.' : 'Aucun signalement traité.') + '</div></div>';
+  renderBans();
+  feather.replace({ 'stroke-width': 2 });
+}
+function renderBans(){
+  const el = document.getElementById('bansList'); if(!el) return;
+  const entries = Object.entries(allBans);
+  const nameOf = (uid) => { const f = Object.values(allReports).find((r) => r && r.targetUid === uid && r.targetName); return f ? f.targetName : '—'; };
+  el.innerHTML = entries.length ? entries.sort((a, b) => (b[1].at || 0) - (a[1].at || 0)).map(([uid, b]) => `
+    <div class="rep-ban-row"><span><b>${escapeHtml(nameOf(uid))}</b> (${escapeHtml(repShort(uid))}) · ${escapeHtml(REPORT_REASONS[b.reason] || b.reason || '—')} · ${timeAgo(b.at)}</span><button class="rep-btn" onclick="reportUnban('${escapeHtml(uid)}')">Lever la suspension</button></div>`).join('') : '<p class="sub">Aucun compte suspendu.</p>';
+}
+function reportResolve(id, action){
+  return db.ref('reports/' + id).update({ status: action === 'sans_suite' ? 'dismissed' : 'actioned', action, resolvedBy: repAdminUid(), resolvedAt: firebase.database.ServerValue.TIMESTAMP });
+}
+function reportBan(uid, reason, reportId){
+  return db.ref('bans/' + uid).set({ at: firebase.database.ServerValue.TIMESTAMP, reason: String(reason || 'autre').slice(0, 40), reportId: reportId || null, by: repAdminUid() });
+}
+function reportOpenVideo(id){
+  const r = allReports[id]; if(!r || !r.reelId) return;
+  db.ref('reels/' + r.reelId).once('value').then((s) => { const v = s.val(); if(v && v.videoUrl) window.open(v.videoUrl, '_blank', 'noopener'); else alert('Cette vidéo n\'existe plus.'); });
+}
+function reportRemoveContent(id, alsoBan){
+  const r = allReports[id]; if(!r || r.status !== 'open') return;
+  const what = r.type === 'reel' ? 'ce Reel (et ses commentaires)' : 'ce commentaire';
+  if(!confirm('Supprimer ' + what + (alsoBan ? ' et suspendre le compte de son auteur' : '') + ' ?')) return;
+  let removal;
+  if(r.type === 'comment' && r.reelId && r.commentId){
+    removal = db.ref('reelComments/' + r.reelId + '/' + r.commentId).remove();
+  } else if(r.type === 'reel' && r.reelId){
+    removal = db.ref('reelComments/' + r.reelId).once('value').then((s) => {
+      const upd = { ['reels/' + r.reelId]: null, ['reelStats/' + r.reelId]: null };
+      Object.keys(s.val() || {}).forEach((cid) => { upd['reelComments/' + r.reelId + '/' + cid] = null; });
+      return db.ref().update(upd);
+    });
+  } else { removal = Promise.resolve(); }
+  removal.then(() => (alsoBan && r.targetUid) ? reportBan(r.targetUid, r.reason, id) : null)
+    .then(() => reportResolve(id, alsoBan ? 'contenu_supprime_et_compte_suspendu' : 'contenu_supprime'))
+    .catch((e) => alert('Erreur : ' + e.message));
+}
+function reportBanOnly(id){
+  const r = allReports[id]; if(!r || r.status !== 'open' || !r.targetUid) return;
+  if(!confirm('Suspendre le compte de ' + (r.targetName || 'cet utilisateur') + ' ? Il sera déconnecté et ne pourra plus publier ni commenter.')) return;
+  reportBan(r.targetUid, r.reason, id).then(() => reportResolve(id, 'compte_suspendu')).catch((e) => alert('Erreur : ' + e.message));
+}
+function reportDismiss(id){ const r = allReports[id]; if(!r || r.status !== 'open') return; reportResolve(id, 'sans_suite').catch((e) => alert('Erreur : ' + e.message)); }
+function reportUnban(uid){ if(!confirm('Lever la suspension de ce compte ?')) return; db.ref('bans/' + uid).remove().catch((e) => alert('Erreur : ' + e.message)); }
+Object.assign(window, { reportOpenVideo, reportRemoveContent, reportBanOnly, reportDismiss, reportUnban });
+if(db){
+  db.ref('reports').on('value', (snap) => { allReports = snap.val() || {}; renderReports(); });
+  db.ref('bans').on('value', (snap) => { allBans = snap.val() || {}; renderReports(); });
+}
+
+// ================= Vue d'ensemble de la plateforme (chiffres réservés au super admin) =================
+let allPresence = {};
+const PLAT_PEOPLE = [['pAccounts', 'users', 'Comptes au total'], ['pClients', 'smile', 'Clients'], ['pShops', 'shopping-bag', 'Boutiques (approuvées / total)'], ['pDrivers', 'truck', 'Livreurs'], ['pEnterprises', 'briefcase', 'Entreprises (approuvées / total)'], ['pNew7', 'user-plus', 'Nouveaux comptes (7 jours)'], ['pActive24', 'activity', 'Actifs (24 h)'], ['pActive7', 'calendar', 'Actifs (7 jours)']];
+const PLAT_ONLINE = [['oAll', 'radio', 'Connectés au total'], ['oClient', 'user', 'Clients'], ['oVendor', 'shopping-bag', 'Boutiques'], ['oDriver', 'truck', 'Livreurs'], ['oEnt', 'briefcase', 'Entreprises']];
+const PLAT_MONEY = [['mNet', 'trending-up', 'Revenu net de la plateforme (à vous)'], ['mCommissions', 'percent', 'Commissions enregistrées (10 %, fixe, solde)'], ['mReferral', 'gift', 'Parrainages versés'], ['mReceivable', 'clock', 'Commissions à recevoir des livreurs'], ['mOwed', 'shield', 'Argent détenu pour d\'autres (à ne pas dépenser)'], ['mGuar', 'lock', 'dont garanties des livreurs'], ['mRefBal', 'gift', 'dont soldes de parrainage'], ['mWd', 'arrow-up-right', 'dont retraits en attente'], ['mPaid', 'credit-card', 'Reçu en ligne, brut (depuis le début)'], ['mPaid30', 'calendar', 'Reçu en ligne, brut (30 derniers jours)']];
+function platCards(containerId, items){
+  const el = document.getElementById(containerId); if(!el) return;
+  el.innerHTML = items.map(([id, icon, label]) => `<div class="kpi-card"><div class="top"><div class="ic"><i data-feather="${icon}"></i></div></div><b id="${id}">—</b><span>${label}</span></div>`).join('');
+}
+function platSet(id, text){ const el = document.getElementById(id); if(el) el.textContent = text; }
+const platN = (n) => (n || 0).toLocaleString('fr-FR');
+function renderPlatformStats(d){
+  const p = d.people || {}, m = d.money || {}, pl = m.platform || {}, ow = m.owedToOthers || {}, op = m.onlinePaid || {};
+  platSet('pAccounts', platN(p.accountsTotal) + (p.truncated ? '+' : '')); platSet('pClients', platN(p.clients));
+  platSet('pShops', platN((p.shops || {}).approved) + ' / ' + platN((p.shops || {}).total)); platSet('pDrivers', platN(p.drivers));
+  platSet('pEnterprises', platN((p.enterprises || {}).approved) + ' / ' + platN((p.enterprises || {}).total));
+  platSet('pNew7', platN(p.createdLast7d)); platSet('pActive24', platN(p.activeLast24h)); platSet('pActive7', platN(p.activeLast7d));
+  platSet('mNet', formatFCFA(pl.net)); platSet('mCommissions', formatFCFA((pl.commissionSimple || 0) + (pl.commissionFlat || 0) + (pl.commissionFromWallet || 0)));
+  platSet('mReferral', '− ' + formatFCFA(pl.referralPayouts)); platSet('mReceivable', formatFCFA(pl.receivableFromDrivers));
+  platSet('mOwed', formatFCFA(ow.total)); platSet('mGuar', formatFCFA(ow.driverGuarantees)); platSet('mRefBal', formatFCFA(ow.referralBalances)); platSet('mWd', formatFCFA(ow.pendingWithdrawals));
+  platSet('mPaid', formatFCFA(op.total)); platSet('mPaid30', formatFCFA(op.last30d));
+  platSet('platformUpdated', 'Mis à jour ' + timeAgo(d.generatedAt));
+}
+function renderPresence(){
+  const roles = { client: 'oClient', vendor: 'oVendor', driver: 'oDriver', entreprise: 'oEnt' }, uids = new Set();
+  Object.keys(roles).forEach((r) => { const o = allPresence[r] || {}; Object.keys(o).forEach((u) => uids.add(u)); platSet(roles[r], platN(Object.keys(o).length)); });
+  platSet('oAll', platN(uids.size));
+}
+async function refreshPlatformStats(){
+  const errEl = document.getElementById('platformError');
+  if(!auth || !auth.currentUser) return;
+  try {
+    const token = await auth.currentUser.getIdToken();
+    const res = await fetch(SERVER_BASE_URL + '/api/adminStats', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: '{}' });
+    const body = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error(body.message || 'Impossible de charger les chiffres.');
+    renderPlatformStats(body); if(errEl) errEl.style.display = 'none';
+  } catch(e){ if(errEl){ errEl.textContent = e.message; errEl.style.display = 'block'; } }
+}
+function platformOnReady(){
+  refreshPlatformStats();
+  if(!window.__platTimer) window.__platTimer = setInterval(() => { const pg = document.getElementById('page-overview'); if(pg && pg.classList.contains('active')) refreshPlatformStats(); }, 60000);
+}
+window.refreshPlatformStats = refreshPlatformStats;
+platCards('peopleGrid', PLAT_PEOPLE); platCards('onlineGrid', PLAT_ONLINE); platCards('moneyGrid', PLAT_MONEY);
+if(db){ db.ref('presence').on('value', (snap) => { allPresence = snap.val() || {}; renderPresence(); }, () => {}); }
+
+// ================= Connexion & rôles (Firebase Authentication) =================
   const ROLE_LABELS = {
     super_admin: 'Super admin', support: 'Service client', ads: 'Publicités',
     registrations: 'Inscriptions', ops: 'Opérations',
   };
   const ROLE_PAGES = {
-    super_admin: ['overview','live','registrations','deliveries','support','ads','managers'],
-    support: ['overview','support'],
+    super_admin: ['overview','live','registrations','deliveries','support','reports','ads','managers'],
+    support: ['overview','support','reports'],
     ads: ['overview','ads'],
     registrations: ['overview','registrations'],
     ops: ['overview','live','deliveries'],
@@ -1439,7 +1609,7 @@
   const auth = (typeof firebase !== 'undefined') ? firebase.auth() : null;
 
   function applyRoleRestrictions(){
-    if(!currentAdminUser) return;
+    if(!currentAdminUser) return; setTimeout(platformOnReady, 300);
     const roles = currentAdminUser.roles || [];
     const allowedSet = new Set();
     roles.forEach((r) => (ROLE_PAGES[r] || []).forEach((p) => allowedSet.add(p)));
