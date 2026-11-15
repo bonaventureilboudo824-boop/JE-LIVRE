@@ -744,6 +744,20 @@
   .choice-btn-recipient{ background:#FFC629; color:#0D0D0C; }
 
   /* ---- Connexion / inscription ---- */
+  .auth-close{ display:none; position:absolute; top:10px; right:10px; width:38px; height:38px; border-radius:50%; border:none; background:rgba(13,13,12,.07); color:inherit; font-size:22px; line-height:1; cursor:pointer; }
+  #authOverlay.gated .auth-close{ display:block; }
+  .auth-guest-hint{ font-size:12.5px; color:var(--text-soft); text-align:center; margin-top:14px; }
+  .profile-guest{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius-md); padding:18px; margin-top:18px; text-align:center; }
+  .profile-guest p{ margin:0 0 12px; font-size:14px; color:var(--text-soft); }
+  .profile-guest button{ width:100%; height:46px; border:none; border-radius:999px; background:var(--yellow); color:var(--black); font-weight:700; font-size:14px; cursor:pointer; margin-top:8px; }
+  .profile-guest button.ghost{ background:transparent; border:1.5px solid var(--border); color:var(--text); }
+  #screen-profile .pm-client, #screen-profile .pm-guest, #screen-profile .pm-role{ display:none; }
+  #screen-profile.has-driver #profileBecomeDriver{ display:none; }
+  #screen-profile[data-mode="client"] .pm-client{ display:flex; }
+  #screen-profile[data-mode="guest"] .pm-guest{ display:block; }
+  #screen-profile[data-mode="role"] .pm-role{ display:flex; }
+  #screen-profile .pm-driver, #screen-profile .pm-vendor, #screen-profile .pm-enterprise{ display:none !important; }
+  #screen-profile.has-driver .pm-driver, #screen-profile.has-vendor .pm-vendor, #screen-profile.has-enterprise .pm-enterprise{ display:flex !important; }
   .auth-overlay{ display:none; position:fixed; inset:0; z-index:10000; background:var(--black); align-items:center; justify-content:center; padding:24px; overflow-y:auto; }
   .auth-overlay.show{ display:flex; }
   .auth-card{ width:100%; max-width:340px; }
@@ -823,7 +837,8 @@
 
 <!-- CONNEXION / INSCRIPTION -->
 <div class="auth-overlay" id="authOverlay">
-  <div class="auth-card">
+  <div class="auth-card" style="position:relative">
+    <button class="auth-close" onclick="closeAuthGate()" aria-label="Fermer">×</button>
     <div class="badge">JL</div>
     <h2 id="authTitle">Se connecter</h2>
     <p id="authSubtitle">Entrez votre numéro et votre mot de passe</p>
@@ -1991,24 +2006,42 @@
       </div>
 
       <!-- PROFILE -->
-      <div class="screen" id="screen-profile" data-title="Profil">
+      <div class="screen" id="screen-profile" data-title="Profil" data-mode="guest">
         <div class="profile-head">
           <div class="av"><i data-feather="user"></i></div>
-          <div><b id="profileName">Utilisateur Je Livre</b><span id="profilePhone">—</span></div>
+          <div><b id="profileName">Invité</b><span id="profilePhone">Non connecté</span></div>
         </div>
+
+        <!-- Invité : aucun compte -->
+        <div class="profile-guest pm-guest">
+          <p>Créez un compte pour commander, demander une livraison et suivre vos commandes.</p>
+          <button onclick="requireClientAccount('continuer', null)">Créer un compte</button>
+          <button class="ghost" onclick="requireClientAccount('continuer', null); backToLogin()">Se connecter</button>
+        </div>
+
         <div style="margin-top:22px">
-          <div class="menu-row" onclick="switchTab('livraison')"><div class="ic"><i data-feather="package"></i></div><b>Mes livraisons</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
-          <div class="menu-row" onclick="go('my-orders')"><div class="ic"><i data-feather="shopping-bag"></i></div><b>Mes commandes</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
-          <div class="menu-row" onclick="go('referral')"><div class="ic"><i data-feather="gift"></i></div><b>Parrainez et gagnez</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
-          <div class="menu-row" onclick="go('my-addresses')"><div class="ic"><i data-feather="map-pin"></i></div><b>Mes adresses</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
-          <div class="menu-row"><div class="ic"><i data-feather="credit-card"></i></div><b>Moyens de paiement</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
-          <div class="menu-row" onclick="go('devenir-livreur')"><div class="ic"><i data-feather="truck"></i></div><b>Devenir livreur</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
-          <div class="menu-row" onclick="go('support-chat')"><div class="ic"><i data-feather="help-circle"></i></div><b>Aide</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <!-- Comptes professionnels déjà ouverts sur cet appareil : on retrouve ses informations et son dashboard -->
+          <div class="menu-row pm-driver" onclick="go('dashboard-livreur')"><div class="ic"><i data-feather="truck"></i></div><b id="profileDriverLabel">Mon dashboard livreur</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-vendor" onclick="go('dashboard-boutique')"><div class="ic"><i data-feather="shopping-bag"></i></div><b id="profileVendorLabel">Ma boutique</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-enterprise" onclick="go('dashboard-entreprise')"><div class="ic"><i data-feather="briefcase"></i></div><b id="profileEntLabel">Mon entreprise de livraison</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+
+          <!-- Compte client -->
+          <div class="menu-row pm-client" onclick="switchTab('livraison')"><div class="ic"><i data-feather="package"></i></div><b>Mes livraisons</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-client" onclick="go('my-orders')"><div class="ic"><i data-feather="shopping-bag"></i></div><b>Mes commandes</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-client" onclick="go('referral')"><div class="ic"><i data-feather="gift"></i></div><b>Parrainez et gagnez</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-client" onclick="go('my-addresses')"><div class="ic"><i data-feather="map-pin"></i></div><b>Mes adresses</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-client"><div class="ic"><i data-feather="credit-card"></i></div><b>Moyens de paiement</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-client" onclick="go('support-chat')"><div class="ic"><i data-feather="help-circle"></i></div><b>Aide</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+
+          <!-- Toujours visible -->
+          <div class="menu-row pm-guest-or-client" id="profileBecomeDriver" onclick="go('devenir-livreur')"><div class="ic"><i data-feather="truck"></i></div><b>Devenir livreur</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
           <div class="menu-row" onclick="jlOpenLegal('confidentialite')"><div class="ic"><i data-feather="shield"></i></div><b>Politique de confidentialité</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
- <div class="menu-row" onclick="jlOpenLegal('conditions')"><div class="ic"><i data-feather="file-text"></i></div><b>Conditions d'utilisation</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
- <div class="menu-row" onclick="jlOpenBlocked()"><div class="ic"><i data-feather="user-x"></i></div><b>Utilisateurs bloqués</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
- <div class="menu-row" onclick="jlOpenDelete('client')"><div class="ic"><i data-feather="trash-2"></i></div><b>Supprimer mon compte</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
- <div class="menu-row" onclick="appLogout()"><div class="ic"><i data-feather="log-out"></i></div><b>Déconnexion</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row" onclick="jlOpenLegal('conditions')"><div class="ic"><i data-feather="file-text"></i></div><b>Conditions d'utilisation</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+
+          <div class="menu-row pm-client" onclick="jlOpenBlocked()"><div class="ic"><i data-feather="user-x"></i></div><b>Utilisateurs bloqués</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-client" onclick="jlOpenDelete('client')"><div class="ic"><i data-feather="trash-2"></i></div><b>Supprimer mon compte</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-client" onclick="appLogout()"><div class="ic"><i data-feather="log-out"></i></div><b>Déconnexion</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-role" onclick="jlRoleLogoutAll()"><div class="ic"><i data-feather="log-out"></i></div><b>Déconnexion</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
         </div>
       </div>
 
@@ -2680,6 +2713,8 @@
       loadSavedAddresses();
       renderRecommendedRow();
       hideAuthOverlay();
+      jlRenderProfile();
+      runPendingAfterAuth();
       initPushNotifications('client', user.uid, null, { prompt: false });
     });
   }
@@ -2796,13 +2831,8 @@
       // vraies boutiques/publicités (leur lecture l'exige) ; sans ça,
       // sur un appareil/navigateur tout neuf, la toute première tentative
       // échoue et ne réessaie jamais toute seule ensuite.
-      if(!realCatalogLoaded){
-        realCatalogLoaded = true;
-        loadRealShops();
-        loadRealProducts();
-        loadRealAds();
-        renderAppNotifications();
-      }
+      ensurePublicCatalog();
+      renderAppNotifications();
       if(window.pendingPaymentReturnTx && !isTopupReturn()){
         const tx = window.pendingPaymentReturnTx;
         window.pendingPaymentReturnTx = null;
@@ -2812,9 +2842,88 @@
       window.currentAppUser = null;
       resetClientSession(); // détache les écouteurs et vide l'état du compte précédent
       backToLogin();
-      showAuthOverlay();
+      // Mode invité : l'app s'ouvre sans compte (catalogue public en lecture seule).
+      // Le formulaire d'inscription n'apparaît que quand la personne veut agir (acheter, demander une livraison…).
+      hideAuthOverlay();
+      ensurePublicCatalog();
+      jlRenderProfile();
     }
   });
+
+  // ---- Profil : s'adapte à ce que la personne possède (invité / compte client / compte professionnel seul) ----
+  function jlRenderProfile(){
+    const scr = document.getElementById('screen-profile'); if(!scr) return;
+    const hasClient = !!(appAuth && appAuth.currentUser);
+    const d = window.currentDriverUser, v = window.currentVendorUser, e = window.currentEntrepriseUser;
+    const mode = hasClient ? 'client' : ((d || v || e) ? 'role' : 'guest');
+    scr.setAttribute('data-mode', mode);
+    scr.classList.toggle('has-driver', !!d);
+    scr.classList.toggle('has-vendor', !!v);
+    scr.classList.toggle('has-enterprise', !!e);
+    const nameEl = document.getElementById('profileName'), phoneEl = document.getElementById('profilePhone');
+    if(mode === 'guest'){ if(nameEl) nameEl.textContent = 'Invité'; if(phoneEl) phoneEl.textContent = 'Non connecté'; }
+    else if(mode === 'role'){
+      const who = d || v || e;
+      if(nameEl) nameEl.textContent = who.name || who.nom || 'Mon compte';
+      if(phoneEl) phoneEl.textContent = (d ? 'Livreur' : (v ? 'Boutique' : 'Entreprise de livraison')) + (who.phone ? ' · ' + who.phone : '');
+    } else if(window.currentAppUser){
+      if(nameEl) nameEl.textContent = window.currentAppUser.name;
+      if(phoneEl) phoneEl.textContent = window.currentAppUser.phone;
+    }
+    const dl = document.getElementById('profileDriverLabel'); if(dl && d) dl.textContent = 'Mon dashboard livreur' + (d.name ? ' · ' + d.name : '');
+    const vl = document.getElementById('profileVendorLabel'); if(vl && v) vl.textContent = 'Ma boutique · ' + (v.name || '');
+    const el = document.getElementById('profileEntLabel'); if(el && e) el.textContent = 'Mon entreprise' + (e.name ? ' · ' + e.name : '');
+    try { feather.replace({ 'stroke-width': 2.25 }); } catch(x){ /* ignoré */ }
+  }
+  window.jlRenderProfile = jlRenderProfile;
+  setInterval(() => { const scr = document.getElementById('screen-profile'); if(scr && scr.classList.contains('active')) jlRenderProfile(); }, 1200);
+  function jlRoleLogoutAll(){
+    try { if(window.currentDriverUser) driverLogout(); } catch(x){}
+    try { if(window.currentVendorUser) vendorLogout(); } catch(x){}
+    try { if(window.currentEntrepriseUser) entrepriseLogout(); } catch(x){}
+    setTimeout(jlRenderProfile, 400);
+  }
+  window.jlRoleLogoutAll = jlRoleLogoutAll;
+
+  // ================= Mode invité =================
+  // Le catalogue (boutiques validées, produits, Reels, pubs) est public : une personne sans compte peut le
+  // parcourir. Tout le reste demande un compte client.
+  function ensurePublicCatalog(){
+    if(realCatalogLoaded) return;
+    realCatalogLoaded = true;
+    loadRealShops();
+    loadRealProducts();
+    loadRealAds();
+  }
+  const CLIENT_ONLY_SCREENS = {
+    'demande-choix': 'faire une demande de livraison', 'express': 'faire une demande de livraison', 'groupee': 'faire une demande de livraison',
+    'checkout': 'passer commande', 'my-orders': 'voir vos commandes', 'my-addresses': 'gérer vos adresses',
+    'notifications': 'voir vos notifications', 'support-chat': 'contacter le service client', 'referral': 'parrainer vos amis',
+  };
+  // Demande un compte client si la personne n'en a pas. Retourne true si elle est déjà connectée.
+  // Sinon ouvre le formulaire d'inscription et rejoue l'action une fois le compte créé.
+  function requireClientAccount(reason, then){
+    if(appAuth.currentUser) return true;
+    window.pendingAfterAuth = then || null;
+    startSignupFlow();
+    document.getElementById('authSubtitle').textContent = 'Créez votre compte gratuit pour ' + (reason || 'continuer');
+    const ov = document.getElementById('authOverlay');
+    ov.classList.add('gated'); ov.classList.add('show');
+    return false;
+  }
+  function closeAuthGate(){
+    window.pendingAfterAuth = null;
+    const ov = document.getElementById('authOverlay');
+    ov.classList.remove('show'); ov.classList.remove('gated');
+    backToLogin();
+  }
+  window.requireClientAccount = requireClientAccount;
+  window.closeAuthGate = closeAuthGate;
+  function runPendingAfterAuth(){
+    const fn = window.pendingAfterAuth; window.pendingAfterAuth = null;
+    document.getElementById('authOverlay').classList.remove('gated');
+    if(typeof fn === 'function'){ setTimeout(fn, 150); }
+  }
 
   // ================= Compte LIVREUR (e-mail + mot de passe, vraie vérification) =================
   // Instance Firebase séparée de celle du client (qui utilise un numéro de
@@ -4771,6 +4880,7 @@
     if (current === 'simple-4') { renderSimpleRecap(); }
   }
   function go(id){
+    if(CLIENT_ONLY_SCREENS[id] && !requireClientAccount(CLIENT_ONLY_SCREENS[id], () => go(id))) return;
     if(id === 'dashboard-livreur' && !window.currentDriverUser){ openDriverLogin(); return; }
     if(id === 'dashboard-boutique' && !window.currentVendorUser){ openVendorLogin(); return; }
     if(id === 'dashboard-entreprise' && !window.currentEntrepriseUser){ openEntrepriseLogin(); return; }
@@ -5252,7 +5362,7 @@
   }
   function toggleReelLike(reelId){
     const user = typeof firebase !== 'undefined' && firebase.auth().currentUser;
-    if(!user){ alert('Connectez-vous pour aimer ce Reel.'); return; }
+    if(!user){ requireClientAccount('aimer ce Reel', () => toggleReelLike(reelId)); return; }
     const wasLiked = !!myReelLikes[reelId];
     myReelLikes[reelId] = !wasLiked; // mise à jour immédiate à l'écran, sans attendre le serveur
     renderReelsFeed(true);
@@ -5264,7 +5374,7 @@
   // gonfler le compteur à chaque petit va-et-vient dans le fil).
   const reelsViewedThisSession = new Set();
   function recordReelView(id){
-    if(!id || reelsViewedThisSession.has(id) || typeof firebase === 'undefined') return;
+    if(!id || reelsViewedThisSession.has(id) || typeof firebase === 'undefined' || !firebase.auth().currentUser) return;
     reelsViewedThisSession.add(id);
     firebase.database().ref('reelStats/' + id + '/viewCount').transaction((cur) => (cur || 0) + 1);
   }
@@ -5278,7 +5388,7 @@
   let reelWatchStart = {}; // reelId -> horodatage du début de la lecture en cours
   function recordReelWatchStart(id){ if(id) reelWatchStart[id] = Date.now(); }
   function recordReelWatchEnd(id){
-    if(!id || !reelWatchStart[id] || typeof firebase === 'undefined') return;
+    if(!id || !reelWatchStart[id] || typeof firebase === 'undefined' || !firebase.auth().currentUser) return;
     const elapsed = Math.min(Date.now() - reelWatchStart[id], 5 * 60 * 1000); // plafonné : une minuterie oubliée ne doit jamais fausser massivement les chiffres
     delete reelWatchStart[id];
     if(elapsed < 1000) return; // un simple passage rapide n'en dit rien sur l'intérêt réel
@@ -5422,7 +5532,7 @@
   // l'article, utile pour le classement — voir reelScore).
   function trackReelProductClick(reelId){
     if(!reelId || typeof firebase === 'undefined') return;
-    firebase.database().ref('reelStats/' + reelId + '/productClicks').transaction((cur) => (cur || 0) + 1);
+    if(firebase.auth().currentUser) firebase.database().ref('reelStats/' + reelId + '/productClicks').transaction((cur) => (cur || 0) + 1);
   }
   function openProductFromReel(key, reelId){
     trackReelProductClick(reelId);
@@ -5548,7 +5658,7 @@
     const text = input && input.value.trim();
     if(!text || !openReelCommentsId || typeof firebase === 'undefined') return;
     const user = firebase.auth().currentUser;
-    if(!user){ alert('Connectez-vous pour commenter.'); return; }
+    if(!user){ requireClientAccount('commenter', null); return; }
     const commentId = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const name = (window.currentAppUser && window.currentAppUser.name) || 'Client Je Livre';
     firebase.database().ref('reelComments/' + openReelCommentsId + '/' + commentId).set({
@@ -8126,7 +8236,7 @@ function jlStartBlocks(uid){
 }
 function jlBlockUser(uid, name){
   const u = appAuth.currentUser;
-  if(!u){ alert('Connectez-vous pour bloquer un utilisateur.'); return; }
+  if(!u){ requireClientAccount('bloquer un utilisateur', null); return; }
   if(!uid || uid === u.uid) return;
   if(!confirm('Bloquer ' + (name || 'cet utilisateur') + ' ? Vous ne verrez plus ses Reels ni ses commentaires. Vous pourrez le débloquer dans Profil → Utilisateurs bloqués.')) return;
   firebase.database().ref('blocks/' + u.uid + '/' + uid).set({ name: String(name || 'Utilisateur').slice(0, 80), at: jlTs() }).catch((e) => alert('Erreur : ' + e.message));
@@ -8142,7 +8252,7 @@ window.jlOpenBlocked = jlOpenBlocked;
 
 // ---- Signalement d'un Reel ou d'un commentaire
 function jlOpenReport(ctx){
-  if(!appAuth.currentUser){ alert('Connectez-vous pour signaler un contenu.'); return; }
+  if(!appAuth.currentUser){ requireClientAccount('signaler un contenu', null); return; }
   jlReportCtx = ctx;
   document.querySelectorAll('input[name="jlReason"]').forEach((r) => { r.checked = false; });
   document.getElementById('jlReportDetails').value = ''; document.getElementById('jlReportErr').textContent = '';
