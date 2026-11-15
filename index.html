@@ -2039,7 +2039,7 @@
           <div class="menu-row" onclick="jlOpenLegal('conditions')"><div class="ic"><i data-feather="file-text"></i></div><b>Conditions d'utilisation</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
 
           <div class="menu-row pm-client" onclick="jlOpenBlocked()"><div class="ic"><i data-feather="user-x"></i></div><b>Utilisateurs bloqués</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
-          <div class="menu-row pm-client" onclick="jlOpenDelete('client')"><div class="ic"><i data-feather="trash-2"></i></div><b>Supprimer mon compte</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-client" id="clientDeleteRow" onclick="jlOpenDelete('client')"><div class="ic"><i data-feather="trash-2"></i></div><b>Supprimer mon compte</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
           <div class="menu-row pm-client" onclick="appLogout()"><div class="ic"><i data-feather="log-out"></i></div><b>Déconnexion</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
           <div class="menu-row pm-role" onclick="jlRoleLogoutAll()"><div class="ic"><i data-feather="log-out"></i></div><b>Déconnexion</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
         </div>
@@ -2705,6 +2705,7 @@
         supportTicketId: data.supportTicketId || null,
         searchHistory: data.searchHistory || null,
         referralCode: data.referralCode || null,
+        linkedFrom: data.linkedFrom || null,
       };
       const nameEl = document.getElementById('profileName');
       const phoneEl = document.getElementById('profilePhone');
@@ -2714,6 +2715,7 @@
       renderRecommendedRow();
       hideAuthOverlay();
       jlRenderProfile();
+      { const dr = document.getElementById('clientDeleteRow'); if(dr) dr.style.display = window.currentAppUser.linkedFrom ? 'none' : ''; }
       runPendingAfterAuth();
       initPushNotifications('client', user.uid, null, { prompt: false });
     });
@@ -2905,11 +2907,27 @@
   function requireClientAccount(reason, then){
     if(appAuth.currentUser) return true;
     window.pendingAfterAuth = then || null;
+    // Compte livreur / boutique / entreprise déjà connecté (téléphone déjà vérifié) :
+    // on le transforme en compte client SANS nouveau SMS ; sinon formulaire d'inscription.
+    const roleAuth = [driverAuth, vendorAuth, entrepriseAuth].find((a) => a && a.currentUser);
+    if(roleAuth){
+      if(!window.__jlLinking){
+        window.__jlLinking = true;
+        serverCallable(roleAuth, 'linkClientAccount')({})
+          .then((r) => appAuth.signInWithCustomToken(r.data.token))
+          .catch(() => { showSignupGate(reason); })
+          .then(() => { window.__jlLinking = false; });
+      }
+      return false;
+    }
+    showSignupGate(reason);
+    return false;
+  }
+  function showSignupGate(reason){
     startSignupFlow();
     document.getElementById('authSubtitle').textContent = 'Créez votre compte gratuit pour ' + (reason || 'continuer');
     const ov = document.getElementById('authOverlay');
     ov.classList.add('gated'); ov.classList.add('show');
-    return false;
   }
   function closeAuthGate(){
     window.pendingAfterAuth = null;
