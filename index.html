@@ -1410,6 +1410,66 @@
 
         <h2 class="section-title" style="font-size:19px;margin-top:22px">Produits</h2>
         <div class="prod-grid" id="prodGrid"></div>
+      </div>
+
+      <!-- REELS -->
+      <div class="screen" id="screen-reels" data-title="Reels" style="padding:0;height:100%">
+        <div class="reels-feed" id="reelsFeed"></div>
+      </div>
+
+      <!-- Commentaires d'un Reel (fenêtre, indépendante du système d'écrans) -->
+      <div id="reelCommentsOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:500;align-items:flex-end;justify-content:center" onclick="if(event.target===this) closeReelComments()">
+        <div style="background:var(--card,#fff);width:100%;max-width:480px;max-height:70vh;border-radius:20px 20px 0 0;display:flex;flex-direction:column;padding:16px 16px 12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <b style="font-size:15px">Commentaires</b>
+            <button onclick="closeReelComments()" style="background:none;border:none;padding:4px"><i data-feather="x"></i></button>
+          </div>
+          <div id="reelCommentsList" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:12px;min-height:60px"></div>
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <input id="reelCommentInput" type="text" placeholder="Ajouter un commentaire…" maxlength="300" style="flex:1;border:1px solid var(--border);border-radius:999px;padding:10px 14px;font-size:14px">
+            <button class="btn btn-yellow" style="padding:10px 16px;white-space:nowrap" onclick="postReelComment()">Envoyer</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- PRODUIT -->
+      <div class="screen" id="screen-product" data-title="Produit">
+        <div class="product-hero" id="productHero"></div>
+        <div class="product-head">
+          <h2 id="productName">—</h2>
+          <div class="product-price" id="productPrice">—</div>
+        </div>
+        <div class="stars" id="productStars" style="margin-top:6px"></div>
+        <p class="section-sub" id="productDesc" style="margin-top:10px">—</p>
+        <div class="seller-row" onclick="openShopFromProduct()">
+          <div class="av"><i data-feather="shopping-bag"></i></div>
+          <div><b id="productSeller">—</b><span>Voir la boutique</span></div>
+          <div class="opt-chev" style="margin-left:auto"><i data-feather="chevron-right"></i></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn btn-outline" style="flex:1;padding:10px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px" onclick="shareProduct(currentProductKey)"><i data-feather="share-2" style="width:16px;height:16px"></i>Partager</button>
+          <button class="btn btn-outline" style="flex:1;padding:10px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;color:#1877F2;border-color:#1877F2" onclick="promoteOnFacebook(currentProductKey)"><i data-feather="facebook" style="width:16px;height:16px"></i>Promouvoir</button>
+        </div>
+        <div class="closed-banner" id="productClosedNotice" style="display:none;background:#FBEAEA;border:1px solid #F3C6C6;border-radius:var(--radius-md);padding:12px 14px;margin-top:14px;color:#B3261E;font-weight:600;font-size:13.5px">
+          Cette boutique est fermée pour le moment. Revenez pendant ses horaires d'ouverture.
+        </div>
+        <div class="qty-row" id="productQtyRow">
+          <span class="lbl">Quantité</span>
+          <div class="qty-stepper">
+            <button onclick="changeProdQty(-1)">−</button>
+            <div class="n" id="productQty">1</div>
+            <button onclick="changeProdQty(1)">+</button>
+          </div>
+        </div>
+        <div class="product-actions" id="productActionsRow">
+          <button class="btn btn-outline" onclick="addToCart(false)">Ajouter au panier</button>
+          <button class="btn btn-yellow" onclick="addToCart(true)">Commander</button>
+        </div>
+      </div>
+
+      <!-- BOUTIQUE (page vendeur) -->
+      <div class="screen" id="screen-shop" data-title="Boutique">
+        <div class="shop-cover"><div class="shop-cover-pattern"></div></div>
         <div class="shop-header-card">
           <div class="shop-header-top">
             <div class="shop-logo" id="shopPageLogo" style="width:64px;height:64px"></div>
@@ -1629,7 +1689,7 @@
 
       <!-- AJOUTER UN REEL -->
       <div class="screen" id="screen-add-reel" data-title="Nouveau Reel">
-        <div class="upload-box" data-upload="newReelVideo" data-accept="video/*" data-max-mb="30"><i data-feather="film"></i><span>Ajouter une courte vidéo</span></div>
+        <div class="upload-box" data-upload="newReelVideo" data-accept="video/*" data-max-mb="30" data-max-sec="30"><i data-feather="film"></i><span>Ajouter une courte vidéo</span></div>
         <div class="field"><label>Légende (optionnel)</label><input id="newReelCaption" placeholder="Décrivez votre produit en quelques mots"></div>
         <div class="field">
           <label>Produit associé (optionnel)</label>
@@ -2044,6 +2104,11 @@
           <div class="menu-row pm-vendor" onclick="go('dashboard-boutique')"><div class="ic"><i data-feather="shopping-bag"></i></div><b id="profileVendorLabel">Ma boutique</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
           <div class="menu-row pm-enterprise" onclick="go('dashboard-entreprise')"><div class="ic"><i data-feather="briefcase"></i></div><b id="profileEntLabel">Mon entreprise de livraison</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
 
+          <div class="menu-row pm-driver" onclick="openSponsor('driver')"><div class="ic"><i data-feather="trending-up"></i></div><b>Sponsoriser un Reel</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-vendor" onclick="openSponsor('shop')"><div class="ic"><i data-feather="trending-up"></i></div><b>Sponsoriser un Reel</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-enterprise" onclick="openSponsor('enterprise')"><div class="ic"><i data-feather="trending-up"></i></div><b>Sponsoriser un Reel</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+          <div class="menu-row pm-client" onclick="openSponsor('client')"><div class="ic"><i data-feather="trending-up"></i></div><b>Sponsoriser un Reel</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
+
           <!-- Compte client -->
           <div class="menu-row pm-client" onclick="switchTab('livraison')"><div class="ic"><i data-feather="package"></i></div><b>Mes livraisons</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
           <div class="menu-row pm-client" onclick="go('my-orders')"><div class="ic"><i data-feather="shopping-bag"></i></div><b>Mes commandes</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
@@ -2062,6 +2127,24 @@
           <div class="menu-row pm-client" onclick="appLogout()"><div class="ic"><i data-feather="log-out"></i></div><b>Déconnexion</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
           <div class="menu-row pm-role" onclick="jlRoleLogoutAll()"><div class="ic"><i data-feather="log-out"></i></div><b>Déconnexion</b><div class="chev"><i data-feather="chevron-right"></i></div></div>
         </div>
+      </div>
+
+      <!-- SPONSORISER UN REEL -->
+      <div class="screen" id="screen-sponsor" data-title="Sponsoriser un Reel">
+        <div style="background:#FFF3D2;border:1px solid #FFE39A;border-radius:var(--radius-md);padding:12px 14px;margin-top:8px">
+          <b style="font-size:15px">5 000 F · 10 jours de diffusion</b>
+          <p class="section-sub" style="margin:4px 0 0">Votre vidéo est montrée au hasard aux personnes qui regardent les Reels (une vidéo sponsorisée toutes les 6 vidéos), avec un bouton « Contacter ». Vidéo d'une minute ou plus acceptée. 200 Reels sponsorisés au maximum en même temps.</p>
+        </div>
+        <h2 class="section-title" style="font-size:18px;margin-top:18px">Nouvelle sponsorisation</h2>
+        <div class="upload-box" data-upload="sponsorVideo" data-accept="video/*" data-max-mb="80" style="margin-top:8px"><i data-feather="film"></i><span>Ajouter ma vidéo (sans limite de durée, 80 Mo max)</span></div>
+        <input id="sponsorCaption" type="text" maxlength="120" placeholder="Texte sous la vidéo (facultatif)" style="width:100%;margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-md);font:inherit">
+        <input id="sponsorLink" type="text" maxlength="300" placeholder="Lien WhatsApp, site ou numéro" style="width:100%;margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:var(--radius-md);font:inherit">
+        <p class="section-sub" style="margin:4px 0 0">Le bouton « Contacter » ouvrira ce lien. Un simple numéro (ex. 70 12 34 56) devient un lien WhatsApp.</p>
+        <div style="font-weight:700;font-size:13.5px;margin-top:12px">Où voulez-vous être vu ?</div>
+        <div id="sponsorCities" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px"></div>
+        <button class="btn btn-yellow" id="sponsorSubmitBtn" style="margin-top:14px" onclick="submitSponsor()">Payer 5 000 F et publier</button>
+        <h2 class="section-title" style="font-size:18px;margin-top:22px">Mes sponsorisations</h2>
+        <div id="sponsorList"><p class="section-sub">Chargement…</p></div>
       </div>
 
       <!-- PARRAINAGE -->
@@ -2873,7 +2956,8 @@
       renderAppNotifications();
       // Rattrape un paiement fait mais jamais confirmé (retour raté, connexion coupée…).
       if(!window.pendingPaymentReturnTx){ try { serverCallable(appAuth, 'confirmPayment')({}).catch(() => {}); } catch(e){ /* ignoré */ } }
-      if(window.pendingPaymentReturnTx && !isTopupReturn()){
+      if(window.pendingPaymentReturnTx && window.pendingPaymentReturnKind === 'sponsor'){ jlMaybeSponsorReturn('client'); }
+      if(window.pendingPaymentReturnTx && !isTopupReturn() && window.pendingPaymentReturnKind !== 'sponsor'){
         const tx = window.pendingPaymentReturnTx;
         window.pendingPaymentReturnTx = null;
         handlePaymentReturn(tx);
@@ -3300,6 +3384,7 @@
         if(data && data.approved){
           window.currentVendorUser = { uid: user.uid, name: data.name || 'Ma boutique', category: data.category || '', phone: data.phone || '', hoursOpen: data.hoursOpen || null, hoursClose: data.hoursClose || null };
           initPushNotifications('shop', user.uid, vendorDb);
+          jlMaybeSponsorReturn('shop');
         }
       });
     });
@@ -3577,6 +3662,7 @@
         if(data && data.approved){
           window.currentEntrepriseUser = { uid: user.uid, name: data.name || 'Mon entreprise', phone: data.phone || '', fleetCapacity: data.fleetCapacity || 10 };
           initPushNotifications('enterprise', user.uid, entrepriseDb);
+          jlMaybeSponsorReturn('enterprise');
         }
       });
     });
@@ -3885,6 +3971,7 @@
           stopDriverCommissionListeners(); listenDriverCommission();
           initPushNotifications('driver', user.uid, driverDb);
           if(isTopupReturn()){ const tx = window.pendingPaymentReturnTx; window.pendingPaymentReturnTx = null; handleCommissionTopupReturn(tx); }
+          else jlMaybeSponsorReturn('driver');
         }
       });
     });
@@ -5624,18 +5711,290 @@
     return (n / 1000000).toFixed(1).replace('.0', '') + ' M';
   }
 
+
+  // =================== Reels sponsorisés ===================
+  const SPONSOR_PRICE_F = 5000, SPONSOR_DAYS = 10;
+  // Villes proposées pour le ciblage (position approximative, sert à reconnaître la ville de la personne qui regarde).
+  const JL_CITIES = [
+    ['Ouagadougou', 12.3714, -1.5197], ['Bobo-Dioulasso', 11.1771, -4.2979], ['Koudougou', 12.2526, -2.3627], ['Ouahigouya', 13.5828, -2.4216],
+    ['Banfora', 10.6333, -4.7667], ['Kaya', 13.0917, -1.0844], ['Tenkodogo', 11.78, -0.3689], ['Fada N\'Gourma', 12.0615, 0.3584],
+    ['Dédougou', 12.4634, -3.4608], ['Dori', 14.0354, -0.0346], ['Gaoua', 10.3299, -3.1783], ['Ziniaré', 12.5833, -1.3],
+    ['Réo', 12.32, -2.47], ['Manga', 11.6633, -1.0717], ['Houndé', 11.5, -3.5167], ['Léo', 11.1, -2.1], ['Djibo', 14.1, -1.6333],
+    ['Pô', 11.17, -1.15], ['Diapaga', 12.07, 1.79], ['Nouna', 12.73, -3.86], ['Yako', 12.9667, -2.2667],
+  ];
+  function jlNearestCity(lat, lng){
+    let best = null, bd = 1e9;
+    JL_CITIES.forEach(([n, la, ln]) => {
+      const r = Math.PI / 180, dLa = (la - lat) * r, dLn = (ln - lng) * r;
+      const a = Math.sin(dLa / 2) ** 2 + Math.cos(lat * r) * Math.cos(la * r) * Math.sin(dLn / 2) ** 2;
+      const d = 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      if(d < bd){ bd = d; best = n; }
+    });
+    return bd <= 60 ? best : null;
+  }
+  // Ville de la personne qui regarde : position du téléphone si elle est déjà autorisée, sinon dernière connue,
+  // sinon Ouagadougou (zone de service actuelle).
+  function jlViewerCity(){
+    try { const c = JSON.parse(localStorage.getItem('jl_vcity') || 'null'); if(c && c.name) return c.name; } catch(e){}
+    return 'Ouagadougou';
+  }
+  function jlRefreshViewerCity(){
+    try {
+      if(!navigator.geolocation || !navigator.permissions) return;
+      navigator.permissions.query({ name: 'geolocation' }).then((st) => {
+        if(st.state !== 'granted') return;
+        navigator.geolocation.getCurrentPosition((pos) => {
+          const name = jlNearestCity(pos.coords.latitude, pos.coords.longitude);
+          if(name) try { localStorage.setItem('jl_vcity', JSON.stringify({ name, at: Date.now() })); } catch(e){}
+        }, () => {}, { maximumAge: 3600000, timeout: 6000 });
+      }).catch(() => {});
+    } catch(e){}
+  }
+
+  let sponsorFeed = [], sponsorFeedLoadedAt = 0, sponsorFeedLoading = false;
+  function loadSponsoredReels(cb){
+    if(typeof firebase === 'undefined') return;
+    if(sponsorFeedLoadedAt && Date.now() - sponsorFeedLoadedAt < 300000) return;
+    if(sponsorFeedLoading) return;
+    sponsorFeedLoading = true;
+    jlRefreshViewerCity();
+    firebase.database().ref('sponsoredReels').orderByChild('status').equalTo('active').once('value').then((snap) => {
+      const city = jlViewerCity(), now = Date.now();
+      const all = Object.entries(snap.val() || {}).filter(([, r]) => {
+        if(!r || !r.videoUrl || !r.linkUrl || (r.endsAt || 0) <= now) return false;
+        const cities = Array.isArray(r.cities) ? r.cities : Object.values(r.cities || {});
+        return cities.length === 0 || cities.includes('*') || cities.includes(city);
+      }).map(([id, r]) => Object.assign({ id }, r));
+      for(let i = all.length - 1; i > 0; i--){ const j = Math.floor(Math.random() * (i + 1)); [all[i], all[j]] = [all[j], all[i]]; } // ordre au hasard
+      sponsorFeed = all; sponsorFeedLoadedAt = Date.now();
+    }).catch(() => { sponsorFeedLoadedAt = Date.now(); }).finally(() => { sponsorFeedLoading = false; if(cb) cb(); });
+  }
+  function jlSponsorItemHtml(r){
+    return `
+        <div class="reel-item" data-sponsor-id="${escapeHtml(r.id)}">
+          <video src="${escapeHtml(r.videoUrl)}" loop muted playsinline preload="metadata"></video>
+          <button class="reel-mute-btn" onclick="toggleReelMute(this)"><i data-feather="${reelsMuted ? 'volume-x' : 'volume-2'}"></i></button>
+          <div class="reel-overlay" style="bottom:84px">
+            <div class="reel-shop-row"><span style="background:#FFC629;color:#0D0D0C;font-weight:800;font-size:11px;border-radius:6px;padding:2px 7px;margin-right:8px">Sponsorisé</span><b style="font-size:13.5px">${escapeHtml(r.ownerName || '')}</b></div>
+            ${r.caption ? `<div class="reel-caption">${escapeHtml(r.caption)}</div>` : ''}
+          </div>
+          <button class="btn btn-yellow" onclick="jlSponsorClick('${escapeHtml(r.id)}')" style="position:absolute;left:14px;right:14px;bottom:22px;width:auto;padding:13px;font-size:15px">Contacter</button>
+        </div>`;
+  }
+  // Une vidéo sponsorisée après chaque série de 6 Reels (au plus 1 par série), prises au hasard parmi celles qui ciblent ma ville.
+  function jlMergeSponsored(itemsHtml){
+    if(!sponsorFeed.length) return itemsHtml.join('');
+    const out = []; let k = 0;
+    itemsHtml.forEach((h, i) => { out.push(h); if((i + 1) % 6 === 0) out.push(jlSponsorItemHtml(sponsorFeed[k++ % sponsorFeed.length])); });
+    if(itemsHtml.length > 0 && itemsHtml.length < 6) out.push(jlSponsorItemHtml(sponsorFeed[0])); // flux court : on ne laisse pas la sponsorisation sans diffusion
+    return out.join('');
+  }
+  function jlDayKey(d){ const x = d || new Date(); return x.getUTCFullYear() + String(x.getUTCMonth() + 1).padStart(2, '0') + String(x.getUTCDate()).padStart(2, '0'); }
+  // Une « vue » compte une fois par appareil et par jour : ça se rapproche du nombre de personnes distinctes.
+  function jlSponsorView(id){
+    if(!id || typeof firebase === 'undefined') return;
+    const day = jlDayKey(), key = 'jl_spv_' + id + '_' + day;
+    try { if(localStorage.getItem(key)) return; localStorage.setItem(key, '1'); } catch(e){}
+    firebase.database().ref('sponsorStats/' + id + '/' + day + '/views').transaction((c) => (c || 0) + 1).catch(() => {});
+  }
+  function jlSponsorClick(id){
+    const r = sponsorFeed.find((x) => x.id === id);
+    if(!r) return;
+    firebase.database().ref('sponsorStats/' + id + '/' + jlDayKey() + '/clicks').transaction((c) => (c || 0) + 1).catch(() => {});
+    window.open(r.linkUrl, '_blank', 'noopener');
+  }
+  window.jlSponsorClick = jlSponsorClick;
+
+  // ---- Écran « Sponsoriser un Reel » (même écran pour client, boutique, livreur, entreprise) ----
+  function jlSponsorCtx(role){
+    if(role === 'client') return { role, auth: appAuth, db: firebase.database(), user: window.currentAppUser };
+    if(role === 'shop') return { role, auth: vendorAuth, db: vendorDb, user: window.currentVendorUser };
+    if(role === 'driver') return { role, auth: driverAuth, db: driverDb, user: window.currentDriverUser };
+    if(role === 'enterprise') return { role, auth: entrepriseAuth, db: entrepriseDb, user: window.currentEntrepriseUser };
+    return null;
+  }
+  window.sponsorCtx = null; window.sponsorSel = new Set(['*']);
+  function renderSponsorCities(){
+    const box = document.getElementById('sponsorCities'); if(!box) return;
+    const chip = (key, label) => { const on = window.sponsorSel.has(key); return `<button type="button" onclick="toggleSponsorCity('${escapeHtml(key)}')" style="border:1px solid ${on ? '#0D0D0C' : 'var(--border)'};background:${on ? '#FFC629' : '#fff'};color:#0D0D0C;font-weight:${on ? 800 : 500};border-radius:999px;padding:7px 12px;font-size:13px">${escapeHtml(label)}</button>`; };
+    box.innerHTML = chip('*', 'Tout le pays') + JL_CITIES.map(([n]) => chip(n, n)).join('');
+  }
+  function toggleSponsorCity(key){
+    const sel = window.sponsorSel;
+    if(key === '*'){ sel.clear(); sel.add('*'); }
+    else { sel.delete('*'); if(sel.has(key)) sel.delete(key); else sel.add(key); if(sel.size === 0) sel.add('*'); }
+    renderSponsorCities();
+  }
+  window.toggleSponsorCity = toggleSponsorCity;
+  function jlNormalizeLink(raw){
+    let t = String(raw || '').trim();
+    if(!t) return null;
+    const digits = t.replace(/[\s().-]/g, '');
+    if(/^\+?[0-9]{8,15}$/.test(digits)){
+      let d = digits.replace(/^\+/, ''); if(d.length === 8) d = '226' + d;
+      return 'https://wa.me/' + d;
+    }
+    if(/^http:\/\//i.test(t)) t = 'https://' + t.slice(7);
+    else if(!/^https:\/\//i.test(t)){ if(/^[a-z]+:/i.test(t) || !/\./.test(t)) return null; t = 'https://' + t; }
+    return /^https:\/\/[^\s]{3,500}$/.test(t) ? t : null;
+  }
+  function openSponsor(role){
+    const c = jlSponsorCtx(role);
+    if(!c || !c.user){ alert('Connectez-vous à ce compte avant de sponsoriser un Reel.'); return; }
+    window.sponsorCtx = c;
+    window.sponsorSel = new Set(['*']);
+    try { resetUploadBoxByKey('sponsorVideo'); } catch(e){}
+    ['sponsorCaption', 'sponsorLink'].forEach((id) => { const el = document.getElementById(id); if(el) el.value = ''; });
+    renderSponsorCities();
+    go('sponsor');
+    renderSponsorList();
+  }
+  window.openSponsor = openSponsor;
+
+  async function jlPaySponsor(id){
+    const c = window.sponsorCtx; if(!c) return;
+    if(!PAYMENTS.enabled){ alert('Le paiement en ligne n\'est pas encore disponible.'); return; }
+    showPayOverlay('Préparation du paiement…', 'Ne fermez pas cette page.', false);
+    try {
+      const res = await serverCallable(c.auth, 'createPayment')({ sponsorId: id });
+      const data = res && res.data ? res.data : {};
+      if(!data.paymentUrl) throw new Error('no-url');
+      try { localStorage.setItem('jl_sponsor_role', c.role); sessionStorage.setItem('je_livre_pending_tx', data.txId); } catch(e){}
+      showPayOverlay('Redirection…', 'Vous allez être redirigé vers la page de paiement sécurisée.', false);
+      window.location.href = data.paymentUrl;
+    } catch(e){
+      closePayOverlay();
+      const code = e && e.code ? String(e.code) : '';
+      alert(code === 'unavailable' ? 'Impossible de joindre le service de paiement. Vérifiez votre connexion et réessayez.'
+        : (code === 'internal' || !e || !e.message) ? 'Le paiement est momentanément indisponible. Réessayez dans un instant.' : e.message);
+      renderSponsorList();
+    }
+  }
+  window.jlPaySponsor = jlPaySponsor;
+
+  async function submitSponsor(){
+    const c = window.sponsorCtx; if(!c || !c.user) return;
+    if(!window.pendingUploads['sponsorVideo']){ alert('Ajoutez votre vidéo.'); return; }
+    const link = jlNormalizeLink((document.getElementById('sponsorLink') || {}).value);
+    if(!link){ alert('Entrez un lien valide (WhatsApp ou site) ou votre numéro WhatsApp.'); return; }
+    const caption = ((document.getElementById('sponsorCaption') || {}).value || '').trim().slice(0, 120);
+    const btn = document.getElementById('sponsorSubmitBtn'); if(btn) btn.disabled = true;
+    showPayOverlay('Envoi de la vidéo…', 'Ne fermez pas cette page, cela peut prendre un moment.', false);
+    try {
+      const videoUrl = await uploadPendingFile('sponsorVideo');
+      if(!videoUrl) throw new Error('Vidéo manquante.');
+      const id = 'sp_' + (Date.now().toString(36) + Math.random().toString(36).slice(2, 8)).toLowerCase();
+      const cities = window.sponsorSel.has('*') ? ['*'] : Array.from(window.sponsorSel);
+      await c.db.ref('sponsoredReels/' + id).set({
+        ownerUid: c.user.uid, ownerRole: c.role, ownerName: String(c.user.name || '').slice(0, 60), ownerPhone: String(c.user.phone || '').slice(0, 30),
+        videoUrl, linkUrl: link, caption, cities, status: 'awaiting_payment', createdAt: firebase.database.ServerValue.TIMESTAMP,
+      });
+      resetUploadBoxByKey('sponsorVideo');
+      closePayOverlay();
+      await jlPaySponsor(id);
+    } catch(e){
+      closePayOverlay();
+      alert((e && e.message) ? 'Envoi impossible : ' + e.message : 'Envoi impossible. Réessayez.');
+    } finally { if(btn) btn.disabled = false; }
+  }
+  window.submitSponsor = submitSponsor;
+
+  async function deleteSponsor(id){
+    const c = window.sponsorCtx; if(!c) return;
+    if(!confirm('Supprimer cette sponsorisation non payée ?')) return;
+    try { await c.db.ref('sponsoredReels/' + id).remove(); } catch(e){ alert('Suppression impossible.'); }
+    renderSponsorList();
+  }
+  window.deleteSponsor = deleteSponsor;
+
+  async function renderSponsorList(){
+    const c = window.sponsorCtx, el = document.getElementById('sponsorList');
+    if(!c || !el) return;
+    try {
+      const snap = await c.db.ref('sponsoredReels').orderByChild('ownerUid').equalTo(c.user.uid).once('value');
+      const rows = Object.entries(snap.val() || {}).map(([id, r]) => Object.assign({ id }, r)).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      if(!rows.length){ el.innerHTML = '<p class="section-sub">Aucune sponsorisation pour le moment.</p>'; return; }
+      const stats = {};
+      await Promise.all(rows.filter((r) => r.status === 'active').map((r) => c.db.ref('sponsorStats/' + r.id).once('value').then((sn) => { stats[r.id] = sn.val() || {}; }).catch(() => { stats[r.id] = {}; })));
+      el.innerHTML = rows.map((r) => {
+        const now = Date.now(), live = r.status === 'active' && (r.endsAt || 0) > now;
+        const days = stats[r.id] || {};
+        const keys = Object.keys(days).sort();
+        const views = keys.reduce((n, k) => n + (days[k].views || 0), 0), clicks = keys.reduce((n, k) => n + (days[k].clicks || 0), 0);
+        let chip, action = '';
+        if(r.status === 'awaiting_payment'){
+          chip = '<span class="status-chip route">À payer</span>';
+          action = `<button class="btn btn-yellow" style="margin-top:10px;padding:10px" onclick="jlPaySponsor('${r.id}')">Payer ${formatFCFA(SPONSOR_PRICE_F)}</button><button class="btn btn-outline" style="margin-top:8px;padding:10px" onclick="deleteSponsor('${r.id}')">Supprimer</button>`;
+        } else if(live){
+          chip = '<span class="status-chip done">En diffusion · reste ' + Math.max(1, Math.ceil((r.endsAt - now) / 86400000)) + ' j</span>';
+        } else { chip = '<span class="status-chip" style="background:#F1F0EC;color:var(--text-soft)">Terminée</span>'; }
+        let chart = '';
+        if(r.status === 'active'){
+          const start = new Date(r.startsAt || now);
+          const bars = [];
+          for(let i = 0; i < SPONSOR_DAYS; i++){ const d = new Date(start.getTime() + i * 86400000); const k = jlDayKey(d); const v = (days[k] && days[k].views) || 0; const cl = (days[k] && days[k].clicks) || 0; bars.push({ d, v, cl }); }
+          const max = Math.max(1, ...bars.map((b) => b.v));
+          chart = '<div style="display:flex;align-items:flex-end;gap:4px;height:70px;margin-top:10px">' + bars.map((b) => `<div title="${b.d.toLocaleDateString('fr-FR')} : ${b.v} vue(s), ${b.cl} contact(s)" style="flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%"><div style="font-size:9px;color:var(--text-soft)">${b.v || ''}</div><div style="width:100%;background:${b.d.getTime() > now ? '#F1F0EC' : '#FFC629'};border-radius:3px 3px 0 0;height:${Math.max(2, Math.round(b.v / max * 48))}px"></div></div>`).join('') + '</div><div style="display:flex;gap:4px;font-size:9px;color:var(--text-soft)">' + bars.map((b) => `<div style="flex:1;text-align:center">${b.d.getDate()}/${b.d.getMonth() + 1}</div>`).join('') + '</div>';
+        }
+        const cities = (Array.isArray(r.cities) ? r.cities : Object.values(r.cities || {}));
+        return `<div class="order-item-card" style="margin-bottom:12px">
+          <div class="top"><b>${escapeHtml(r.caption || 'Reel sponsorisé')}</b>${chip}</div>
+          <div class="meta" style="margin-top:4px">${cities.includes('*') ? 'Tout le pays' : escapeHtml(cities.join(', '))}</div>
+          ${r.status === 'active' ? `<div style="display:flex;gap:10px;margin-top:10px"><div class="stat-card" style="flex:1"><span>Personnes ayant vu</span><b>${views}</b></div><div class="stat-card" style="flex:1"><span>Contacts (clics)</span><b>${clicks}</b></div></div>${chart}<div class="meta" style="margin-top:6px">Une personne est comptée une fois par jour.</div>` : ''}
+          ${action}</div>`;
+      }).join('');
+    } catch(e){ el.innerHTML = '<p class="section-sub">Chargement indisponible pour le moment.</p>'; }
+  }
+  window.renderSponsorList = renderSponsorList;
+
+  // Retour de la page de paiement d'une sponsorisation (quel que soit le compte qui a payé).
+  function jlSponsorReturnPending(role){
+    try { return window.pendingPaymentReturnTx && window.pendingPaymentReturnKind === 'sponsor' && localStorage.getItem('jl_sponsor_role') === role; } catch(e){ return false; }
+  }
+  window.jlSponsorReturnPending = jlSponsorReturnPending;
+  function jlMaybeSponsorReturn(role){
+    if(!jlSponsorReturnPending(role)) return;
+    const tx = window.pendingPaymentReturnTx; window.pendingPaymentReturnTx = null; window.pendingPaymentReturnKind = null;
+    const c = jlSponsorCtx(role); if(!c) return;
+    showPayOverlay('Vérification du paiement…', 'Nous attendons la confirmation de votre paiement.', false);
+    const ref = c.db.ref('payments/' + tx);
+    let done = false, timer = null, pollTimer = null, autoTimer = null;
+    const after = () => { try { window.sponsorCtx = c; openSponsor(role); } catch(e){} };
+    function finish(title, msg, autoGo){
+      if(done) return; done = true;
+      clearTimeout(timer); clearInterval(pollTimer); ref.off('value', onValue);
+      payOverlayAfterClose = after;
+      showPayOverlay(title, msg, true);
+      if(autoGo) autoTimer = setTimeout(() => { if(document.getElementById('payOverlay').classList.contains('show')) closePayOverlay(); }, 2500);
+    }
+    const askServer = () => { serverCallable(c.auth, 'confirmPayment')({ txId: tx }).catch(() => {}); };
+    askServer(); pollTimer = setInterval(askServer, 3000);
+    function onValue(snap){
+      const p = snap.val(); if(!p) return;
+      if(p.status === 'paid') finish('Sponsorisation activée', 'Votre Reel est diffusé pendant ' + SPONSOR_DAYS + ' jours. Suivez les vues dans « Mes sponsorisations ».', true);
+      else if(p.status === 'paid_needs_review') finish('Paiement reçu', 'Nous avons bien reçu votre paiement, mais la sponsorisation demande une vérification (plus de place disponible ?). Le service client vous recontacte.');
+      else if(p.status === 'amount_mismatch') finish('Paiement à vérifier', 'Le montant reçu ne correspond pas. Le service client va l\'examiner.');
+      else if(p.status === 'failed' || p.status === 'failed_to_create') finish('Paiement non abouti', 'Le paiement n\'a pas abouti. Vous pouvez réessayer depuis « Sponsoriser un Reel ».');
+    }
+    timer = setTimeout(() => finish('Paiement en cours de vérification', 'Nous n\'avons pas encore reçu la confirmation. Elle sera activée automatiquement dès que le paiement sera confirmé.'), 90000);
+    ref.on('value', onValue, () => finish('Paiement en cours de vérification', 'Réessayez dans un instant depuis « Sponsoriser un Reel ».'));
+  }
+  window.jlMaybeSponsorReturn = jlMaybeSponsorReturn;
+
   function renderReelsFeed(force){
     const el = document.getElementById('reelsFeed');
     if(!el) return;
     loadRealReels();
     if(!myReelLikesLoaded){ loadMyReelLikes(() => renderReelsFeed(true)); }
     if(!myAffinityLoaded){ loadMyAffinity(() => renderReelsFeed(true)); }
+    const sponsorWasLoaded = !!sponsorFeedLoadedAt;
+    loadSponsoredReels(() => { if(!sponsorWasLoaded) renderReelsFeed(true); });
     // Un Reel n'est repris que si sa boutique existe dans le catalogue, donc
     // approuvée — même garde-fou que pour les produits (voir rebuildCatalog).
     const list = Object.entries(realReelsRaw)
       .filter(([id, r]) => r && r.videoUrl && shopsByKey[r.shopId] && !jlIsBlocked(r.shopId) && !jlIsHiddenReel(id))
       .sort((a, b) => reelScore(b[0], b[1]) - reelScore(a[0], a[1]));
-    const renderKey = list.map(([id]) => id).join(',');
+    const renderKey = list.map(([id]) => id).join(',') + '|' + sponsorFeed.map((x) => x.id).join(',');
     if(renderKey === lastReelsRenderKey && !force) return;
     lastReelsRenderKey = renderKey;
 
@@ -5644,7 +6003,7 @@
       feather.replace({ 'stroke-width': 2.25 });
       return;
     }
-    el.innerHTML = list.map(([id, r]) => {
+    el.innerHTML = jlMergeSponsored(list.map(([id, r]) => {
       const shop = shopsByKey[r.shopId];
       const stats = reelStatsRaw[id] || {};
       const liked = !!myReelLikes[id];
@@ -5685,7 +6044,7 @@
           </div>
         </div>
       `;
-    }).join('');
+    }));
     feather.replace({ 'stroke-width': 2.25 });
     setupReelsObserver();
   }
@@ -5700,15 +6059,16 @@
     reelsObserver = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         const v = entry.target;
-        const reelId = v.closest('.reel-item') && v.closest('.reel-item').dataset.reelId;
+        const itemEl = v.closest('.reel-item');
+        const reelId = itemEl && itemEl.dataset.reelId;
+        const spId = itemEl && itemEl.dataset.sponsorId;
         if(entry.isIntersecting && entry.intersectionRatio >= 0.6){
           v.muted = reelsMuted;
           v.play().catch(() => {});
-          recordReelView(reelId);
-          recordReelWatchStart(reelId);
+          if(spId){ jlSponsorView(spId); } else { recordReelView(reelId); recordReelWatchStart(reelId); }
         } else {
           v.pause();
-          recordReelWatchEnd(reelId);
+          if(!spId) recordReelWatchEnd(reelId);
         }
       });
     }, { root: el, threshold: [0, 0.6, 1] });
@@ -5909,6 +6269,110 @@
   window.pendingUploads = {};
   const MAX_UPLOAD_MB = 5;
 
+  // ---- Réduction des photos et coupe des vidéos, avant envoi ----
+  // Une photo de téléphone (3 à 8 Mo) est ramenée à ~200 Ko : invisible à l'écran d'un téléphone, 20 fois plus léger.
+  const JL_DOC_KEYS = /(Id|Rccm)$/i; // pièces d'identité / RCCM : un peu moins réduites pour rester lisibles
+  async function jlCompressImage(file, key){
+    if(!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.type)) return file;
+    const isDoc = JL_DOC_KEYS.test(key || '');
+    const maxDim = isDoc ? 1600 : 1280, quality = isDoc ? 0.85 : 0.8;
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('Image illisible.')); i.src = url; });
+      const k = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.max(1, Math.round(img.naturalWidth * k)), h = Math.max(1, Math.round(img.naturalHeight * k));
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
+      const blob = await new Promise((res) => cv.toBlob(res, 'image/jpeg', quality));
+      if(!blob || blob.size >= file.size) return file; // déjà plus léger : on ne touche pas
+      return new File([blob], (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+    } finally { URL.revokeObjectURL(url); }
+  }
+
+  function jlVideoDuration(file){
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file); const v = document.createElement('video');
+      v.preload = 'metadata'; v.muted = true;
+      v.onloadedmetadata = () => { const d = v.duration; URL.revokeObjectURL(url); res(isFinite(d) ? d : 0); };
+      v.onerror = () => { URL.revokeObjectURL(url); rej(new Error('Vidéo illisible. Essayez un autre fichier.')); };
+      v.src = url;
+    });
+  }
+  function jlFmtTime(t){ t = Math.max(0, Math.round(t)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); }
+
+  // Coupe un extrait (start → start+maxSec) en rejouant la vidéo dans le téléphone et en l'enregistrant.
+  // Le son est capté sans être joué à haute voix. Dure autant que l'extrait (max. 30 s).
+  async function jlTrimVideo(file, start, maxSec, onProgress){
+    if(typeof MediaRecorder === 'undefined') throw new Error("Ce téléphone ne peut pas couper la vidéo. Choisissez une vidéo de " + maxSec + " secondes maximum.");
+    const url = URL.createObjectURL(file); const v = document.createElement('video');
+    v.src = url; v.playsInline = true; v.preload = 'auto';
+    await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('Vidéo illisible.')); });
+    v.currentTime = start; await new Promise((r) => { v.onseeked = r; });
+    const cap = v.captureStream || v.mozCaptureStream;
+    if(!cap) throw new Error("Ce téléphone ne peut pas couper la vidéo. Choisissez une vidéo de " + maxSec + " secondes maximum.");
+    const vs = cap.call(v);
+    const tracks = [...vs.getVideoTracks()];
+    let actx = null;
+    try {
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = actx.createMediaElementSource(v); const dest = actx.createMediaStreamDestination();
+      src.connect(dest); tracks.push(...dest.stream.getAudioTracks());
+    } catch(e){ tracks.push(...vs.getAudioTracks()); }
+    const stream = new MediaStream(tracks);
+    const mime = ['video/mp4', 'video/webm;codecs=vp8,opus', 'video/webm'].find((m) => MediaRecorder.isTypeSupported(m));
+    if(!mime) throw new Error("Ce téléphone ne peut pas couper la vidéo. Choisissez une vidéo de " + maxSec + " secondes maximum.");
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 1500000, audioBitsPerSecond: 96000 });
+    const chunks = []; rec.ondataavailable = (e) => { if(e.data && e.data.size) chunks.push(e.data); };
+    const done = new Promise((res) => { rec.onstop = res; });
+    rec.start(500);
+    try { await v.play(); } catch(e){ rec.stop(); throw new Error('Lecture impossible pour couper la vidéo.'); }
+    await new Promise((res) => {
+      const tick = setInterval(() => {
+        const el = v.currentTime - start;
+        if(onProgress) onProgress(Math.min(1, el / maxSec));
+        if(el >= maxSec || v.ended){ clearInterval(tick); res(); }
+      }, 200);
+    });
+    v.pause(); rec.stop(); await done;
+    tracks.forEach((t) => { try { t.stop(); } catch(e){} }); if(actx) try { actx.close(); } catch(e){}
+    URL.revokeObjectURL(url);
+    const blob = new Blob(chunks, { type: mime.split(';')[0] });
+    return new File([blob], 'reel-' + Date.now() + (mime.startsWith('video/mp4') ? '.mp4' : '.webm'), { type: blob.type });
+  }
+
+  // Fenêtre : « Cette vidéo dure X s, la limite est de 30 s » + choix de l'extrait + bouton Couper.
+  function jlAskTrimVideo(file, dur, maxSec){
+    return new Promise((resolve) => {
+      const url = URL.createObjectURL(file);
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:99999;display:flex;align-items:center;justify-content:center;padding:16px';
+      wrap.innerHTML = `<div style="background:#fff;border-radius:16px;padding:16px;max-width:380px;width:100%;max-height:92vh;overflow:auto">
+        <div style="font-weight:800;font-size:16px">Vidéo trop longue</div>
+        <p style="font-size:13.5px;color:#555;margin:6px 0 10px">Cette vidéo dure ${jlFmtTime(dur)} ; la limite est de ${maxSec} secondes. Choisissez l'extrait à garder.</p>
+        <video id="jlTrimPrev" src="${url}" muted playsinline controls style="width:100%;max-height:260px;background:#000;border-radius:10px"></video>
+        <input id="jlTrimStart" type="range" min="0" max="${Math.max(0, Math.floor(dur - maxSec))}" value="0" step="1" style="width:100%;margin-top:10px">
+        <div id="jlTrimLabel" style="font-size:13px;font-weight:700;text-align:center;margin-bottom:10px"></div>
+        <div id="jlTrimProg" style="display:none;height:8px;background:#eee;border-radius:8px;overflow:hidden;margin-bottom:10px"><div id="jlTrimBar" style="height:100%;width:0;background:#FFC629"></div></div>
+        <button id="jlTrimGo" class="btn btn-yellow" style="padding:11px">Couper et garder ${maxSec} s</button>
+        <button id="jlTrimNo" class="btn btn-outline" style="padding:11px;margin-top:8px">Annuler</button></div>`;
+      document.body.appendChild(wrap);
+      const $ = (id) => wrap.querySelector('#' + id);
+      const prev = $('jlTrimPrev'), rng = $('jlTrimStart');
+      const upd = () => { const st = +rng.value; $('jlTrimLabel').textContent = 'Extrait : de ' + jlFmtTime(st) + ' à ' + jlFmtTime(st + maxSec); try { prev.currentTime = st; } catch(e){} };
+      rng.addEventListener('input', upd); upd();
+      const close = (v) => { try { prev.pause(); } catch(e){} URL.revokeObjectURL(url); wrap.remove(); resolve(v); };
+      $('jlTrimNo').onclick = () => close(null);
+      $('jlTrimGo').onclick = async () => {
+        $('jlTrimGo').disabled = true; $('jlTrimNo').style.display = 'none'; $('jlTrimGo').textContent = 'Coupe en cours… ne quittez pas';
+        $('jlTrimProg').style.display = 'block'; try { prev.pause(); } catch(e){}
+        try {
+          const out = await jlTrimVideo(file, +rng.value, maxSec, (p) => { $('jlTrimBar').style.width = Math.round(p * 100) + '%'; });
+          close(out);
+        } catch(e){ alert(e && e.message ? e.message : 'La coupe a échoué.'); close(null); }
+      };
+    });
+  }
+
   function initUploadBoxes(){
     document.querySelectorAll('.upload-box[data-upload]').forEach((box) => {
       if(box.dataset.bound) return;
@@ -5924,15 +6388,42 @@
       input.style.display = 'none';
       box.appendChild(input);
       box.addEventListener('click', () => input.click());
-      input.addEventListener('change', () => {
-        const file = input.files[0];
+      input.addEventListener('change', async () => {
+        let file = input.files[0];
         if(!file) return;
         // Une zone peut déclarer sa propre limite (ex. une vidéo de Reel,
         // plus volumineuse qu'une photo) via data-max-mb ; sinon, la limite
-        // générale de 5 Mo s'applique.
+        // générale de 5 Mo s'applique. Une photo est réduite avant l'envoi : on accepte
+        // donc une photo brute plus lourde (25 Mo), la limite s'applique au résultat.
         const maxMb = parseInt(box.dataset.maxMb, 10) || MAX_UPLOAD_MB;
+        const isImg = file.type.startsWith('image/');
+        const isVid = file.type.startsWith('video/');
+        if(file.size > (isImg ? 25 : maxMb) * 1024 * 1024){
+          alert('Fichier trop volumineux (' + (isImg ? 25 : maxMb) + ' Mo maximum).');
+          input.value = '';
+          return;
+        }
+        try {
+          if(isImg){
+            file = await jlCompressImage(file, key);
+          } else if(isVid){
+            const maxSec = parseInt(box.dataset.maxSec, 10) || 0;
+            if(maxSec){
+              const dur = await jlVideoDuration(file);
+              if(dur > maxSec + 0.5){
+                const cut = await jlAskTrimVideo(file, dur, maxSec);
+                if(!cut){ input.value = ''; return; }
+                file = cut;
+              }
+            }
+          }
+        } catch(e){
+          alert(e && e.message ? e.message : 'Impossible de préparer ce fichier. Essayez-en un autre.');
+          input.value = '';
+          return;
+        }
         if(file.size > maxMb * 1024 * 1024){
-          alert('Fichier trop volumineux (' + maxMb + ' Mo maximum).');
+          alert('Fichier trop volumineux (' + maxMb + ' Mo maximum' + (isVid ? ' : choisissez une vidéo plus courte ou plus légère' : '') + ').');
           input.value = '';
           return;
         }
