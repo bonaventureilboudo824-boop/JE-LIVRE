@@ -1813,6 +1813,7 @@
           <b id="availLabel">Disponible</b>
           <div class="switch" id="availSwitch" onclick="toggleAvail()"></div>
         </div>
+        <div id="driverCoursesBox" style="margin-top:18px"></div>
         <h2 class="section-title" style="font-size:19px;margin-top:22px">Nouvelles demandes <span style="font-family:'Inter',sans-serif;font-weight:400;font-size:11px;color:var(--text-soft)">(dans un rayon de 2 km)</span></h2>
         <div id="deliveryRequestsList"><p class="section-sub">Aucune demande à proximité pour le moment.</p></div>
         <div id="marketplaceRequestsList"></div>
@@ -1823,11 +1824,8 @@
         <div id="coursePhaseLabel" style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--yellow-deep);margin-top:2px">Trajet A→B : vers l'expéditeur</div>
         <div id="courseMapReal" style="height:200px;border-radius:var(--radius-lg);overflow:hidden;border:1px solid var(--border);margin-top:8px"></div>
         <div class="eta-banner" style="margin-top:12px"><b id="courseEtaLabel">Calcul de l'itinéraire…</b><span id="courseDistLabel">—</span></div>
-        <button class="btn btn-yellow" style="margin-top:10px;display:flex;align-items:center;justify-content:center;gap:8px" onclick="openFullscreenNav()">
-          <i data-feather="maximize" style="width:15px;height:15px"></i>Naviguer en plein écran
-        </button>
-        <a class="btn btn-outline" id="courseNavBtn" href="#" target="_blank" rel="noopener" style="margin-top:10px;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none">
-          <i data-feather="navigation" style="width:15px;height:15px"></i>Ouvrir dans Maps
+                <a class="btn btn-yellow" id="courseNavBtn" href="#" target="_blank" rel="noopener" style="margin-top:10px;display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none">
+          <i data-feather="navigation" style="width:15px;height:15px"></i>Ouvrir Google Maps
         </a>
         <div class="courier-card">
           <div class="courier-avatar"><i data-feather="user"></i></div>
@@ -2830,7 +2828,7 @@
     seenDeliveryReqIds = null; seenMarketplaceReqIds = null;
     lastDeliveryRequestsSnap = {}; lastMarketplaceRequestsSnap = {};
     window.dismissedRequests = new Set();
-    window.currentCourse = null; courseStep = 0;
+    window.currentCourse = null; courseStep = 0; window.__jlAutoResumed = false;
     if(driverWatchId != null && navigator.geolocation){ navigator.geolocation.clearWatch(driverWatchId); driverWatchId = null; }
     ['deliveryRequestsList', 'marketplaceRequestsList'].forEach((id) => {
       const el = document.getElementById(id); if(el) el.innerHTML = '';
@@ -4377,7 +4375,7 @@
 
     const navBtn = document.getElementById('courseNavBtn');
     if (navBtn) {
-      navBtn.href = `https://www.google.com/maps/dir/?api=1&origin=${origin.lat},${origin.lng}&destination=${target.lat},${target.lng}&travelmode=driving`;
+      navBtn.href = `https://www.google.com/maps/dir/?api=1&destination=${target.lat},${target.lng}&travelmode=driving`;
     }
 
     const etaLabel = document.getElementById('courseEtaLabel');
@@ -5070,7 +5068,7 @@
           if(dot) dot.style.background = window.driverAvailable ? '#3EAF4C' : '#B9B7B0';
         }
       }
-      listenMarketplaceRequests(); listenDeliveryRequests(); loadDriverStats(); listenDriverCommission(); renderCommissionBanner(); loadDriverEarningsBalance();
+      listenMarketplaceRequests(); listenDeliveryRequests(); loadDriverStats(); loadDriverCourses(); listenDriverCommission(); renderCommissionBanner(); loadDriverEarningsBalance();
     }
     if (current === 'course-active') { renderCourseMap(); }
     if (current === 'dashboard-entreprise') { listenFleet(); renderFleet(); renderFleetMap(); }
@@ -5104,7 +5102,7 @@
   function backTo(tab, id){ pushTabHistory(tab); currentTab = tab; stack = [tab, id]; render(); }
   function backToDashboard(){ pushTabHistory('home'); currentTab = 'home'; stack = ['home','dashboard-livreur']; courseStep = 0;
     document.getElementById('courseBtn').textContent = 'Marquer comme récupéré';
-    render();
+    render(); try { loadDriverCourses(); loadDriverStats(); } catch(e){}
   }
 
   // ---- Gestion de la flotte ----
@@ -8215,6 +8213,7 @@
 
   function showCourseDone(){
     const c = window.currentCourse;
+    if(c){ jlClearCourseStep(c.requestId || c.orderId); }
     const msgEl = document.getElementById('courseDoneMessage');
     const earnEl = document.getElementById('courseDoneEarning');
     if(msgEl){
@@ -8276,6 +8275,94 @@
       box.style.display = 'none';
     }
   }
+  // ---- Reprise de course + historique du livreur ----
+  // La navigation se fait dans Google Maps ; l'état de la course vit dans la base
+  // (statut, pickedUpAt) + une copie locale de l'étape, pour retrouver le livreur
+  // exactement là où il en était, même après fermeture de l'appli.
+  function jlCourseId(){ const c = window.currentCourse; return c ? (c.requestId || c.orderId) : null; }
+  function jlSaveCourseStep(n){ try { const id = jlCourseId(); if(id) localStorage.setItem('jl_cstep_' + id, String(n)); } catch(e){} }
+  function jlLoadCourseStep(id){ try { return localStorage.getItem('jl_cstep_' + id) === '1' ? 1 : 0; } catch(e){ return 0; } }
+  function jlClearCourseStep(id){ try { localStorage.removeItem('jl_cstep_' + id); } catch(e){} }
+  function jlEsc(t){ return String(t == null ? '' : t).replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+
+  async function jlResumeCourse(source, id){
+    if(typeof firebase === 'undefined' || !window.currentDriverUser) return;
+    const uid = window.currentDriverUser.uid;
+    let r;
+    try { r = (await driverDb.ref(source + '/' + id).once('value')).val(); } catch(e){ alert('Impossible de rouvrir cette livraison. Vérifiez votre connexion.'); return; }
+    if(!r || r.assignedDriverId !== uid){ alert("Cette livraison n'est plus disponible."); return; }
+    const nameEl = document.getElementById('courseClientName');
+    const metaEl = document.getElementById('courseClientMeta');
+    const btn = document.getElementById('courseBtn');
+    const cashEl = document.getElementById('courseCashNotice');
+    if(source === 'deliveryRequests'){
+      if(r.status !== 'assigned'){ loadDriverCourses(); return; }
+      window.currentCourse = { requestId: id, trackId: r.trackId, clientCoords: r.senderCoords, dropoffCoords: r.recipientCoords || null, source: 'deliveryRequests', handover: r.handover === true, price: r.price || 0, senderPhone: r.senderPhone || '', recipientPhone: r.recipientPhone || '', referredBy: r.referredBy || null, referredAt: r.referredAt || null, deliveryType: r.type || 'simple', packageCount: r.packageCount || 1, paymentMethod: r.paymentMethod || 'cash' };
+      courseStep = (r.pickedUpAt || jlLoadCourseStep(id) === 1) ? 1 : 0;
+      if(nameEl) nameEl.textContent = r.trackId + (r.ticket ? ' · ' + r.ticket : '');
+      if(metaEl) metaEl.textContent = describeDeliveryType(r);
+      if(cashEl) cashEl.style.display = 'none';
+    } else {
+      if(r.status === 'awaiting_payment'){
+        window.currentCourse = { orderId: id, source: 'marketplaceOrders', price: r.deliveryFee || 0, paymentMethod: r.paymentMethod || 'pay_on_delivery' };
+        go('course-waiting-payment');
+        const ref = driverDb.ref('marketplaceOrders/' + id);
+        const onValue = (snap) => { const o = snap.val(); if(o && o.status === 'completed'){ ref.off('value', onValue); showCourseDone(); } };
+        ref.on('value', onValue);
+        return;
+      }
+      if(r.status !== 'assigned'){ loadDriverCourses(); return; }
+      const shop = (typeof shopsByKey !== 'undefined') ? shopsByKey[r.shopId] : null;
+      const hasShop = shop && shop.lat != null && shop.lng != null;
+      window.currentCourse = { orderId: id, source: 'marketplaceOrders', clientCoords: hasShop ? { lat: shop.lat, lng: shop.lng } : r.clientCoords, dropoffCoords: hasShop ? r.clientCoords : null, price: r.deliveryFee || 0, recipientPhone: r.clientPhone || '', paymentMethod: r.paymentMethod || 'pay_on_delivery' };
+      courseStep = jlLoadCourseStep(id);
+      if(nameEl) nameEl.textContent = 'Client · ' + (r.clientPhone || '');
+      if(metaEl) metaEl.textContent = (r.items || []).map((it) => it.qty + '×' + it.name).join(', ') + ' · ' + (r.shopName || '');
+      if(cashEl){
+        if(r.paymentMethod === 'pay_on_delivery' && r.paymentStatus !== 'paid'){ cashEl.style.display = 'block'; cashEl.textContent = 'Paiement en ligne à la remise : le client paiera sur son téléphone pendant que vous attendez — aucune espèce à récupérer.'; }
+        else cashEl.style.display = 'none';
+      }
+    }
+    if(btn) btn.textContent = courseStep === 0 ? 'Marquer comme récupéré' : 'Marquer comme livré';
+    updateCourseContactButtons();
+    jlSyncCourseCodeUi();
+    go('course-active');
+  }
+  window.jlResumeCourse = jlResumeCourse;
+
+  function loadDriverCourses(){
+    const box = document.getElementById('driverCoursesBox');
+    if(!box || !window.currentDriverUser || typeof firebase === 'undefined') return;
+    const uid = window.currentDriverUser.uid;
+    Promise.all([
+      driverDb.ref('deliveryRequests').orderByChild('assignedDriverId').equalTo(uid).once('value'),
+      driverDb.ref('marketplaceOrders').orderByChild('assignedDriverId').equalTo(uid).once('value'),
+    ]).then(([dSnap, oSnap]) => {
+      const rows = [];
+      const d = dSnap.val() || {}, o = oSnap.val() || {};
+      Object.keys(d).forEach((id) => { const r = d[id]; if(r) rows.push({ id, source: 'deliveryRequests', r, label: r.trackId || id, sub: describeDeliveryType(r), gain: driverEarningFor(r, 'price'), ts: r.completedAt || r.deliveredAt || r.createdAt || 0, doing: r.status === 'assigned', done: r.status === 'completed', step: r.pickedUpAt ? 'Colis récupéré — à livrer' : 'À récupérer' }); });
+      Object.keys(o).forEach((id) => { const r = o[id]; if(r) rows.push({ id, source: 'marketplaceOrders', r, label: 'Commande · ' + (r.shopName || ''), sub: (r.items || []).map((it) => it.qty + '×' + it.name).join(', '), gain: driverEarningFor(r, 'deliveryFee'), ts: r.completedAt || r.deliveredAt || r.createdAt || 0, doing: r.status === 'assigned' || r.status === 'awaiting_payment', done: r.status === 'completed' || r.status === 'delivered', step: r.status === 'awaiting_payment' ? 'En attente du paiement du client' : (jlLoadCourseStep(id) === 1 ? 'Commande récupérée — à livrer' : 'À récupérer à la boutique') }); });
+      const doing = rows.filter((x) => x.doing).sort((a, b) => b.ts - a.ts);
+      const done = rows.filter((x) => x.done).sort((a, b) => b.ts - a.ts).slice(0, 30);
+      let html = '';
+      if(doing.length){
+        html += '<h2 class="section-title" style="font-size:19px">Livraison en cours</h2>';
+        html += doing.map((x) => `<div style="background:#FFF3D2;border:1px solid #FFE39A;border-radius:var(--radius-md);padding:12px 14px;margin-top:8px"><b>${jlEsc(x.label)}</b><div class="section-sub" style="margin:2px 0 8px">${jlEsc(x.sub)}</div><div style="font-size:13px;font-weight:700;margin-bottom:8px">${jlEsc(x.step)}</div><button class="btn btn-yellow" style="padding:10px" onclick="jlResumeCourse('${x.source}','${jlEsc(x.id)}')">Reprendre la livraison</button></div>`).join('');
+      }
+      html += '<h2 class="section-title" style="font-size:19px;margin-top:18px">Mes livraisons effectuées</h2>';
+      if(!done.length) html += '<p class="section-sub">Aucune livraison terminée pour le moment.</p>';
+      else html += done.map((x) => { const dt = x.ts ? new Date(x.ts).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }) : ''; return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 14px;margin-top:8px"><div style="min-width:0"><b style="font-size:14px">${jlEsc(x.label)}</b><div class="section-sub" style="margin:0">${jlEsc(dt)} · ${x.r.status === 'delivered' ? 'Livré, confirmation du client en attente' : 'Terminée'}</div></div><b style="white-space:nowrap">+ ${formatFCFA(x.gain)}</b></div>`; }).join('');
+      box.innerHTML = html;
+      // Première ouverture après connexion/relance : on remet le livreur sur sa course en cours.
+      if(doing.length && !window.__jlAutoResumed && !window.currentCourse){
+        window.__jlAutoResumed = true;
+        jlResumeCourse(doing[0].source, doing[0].id);
+      }
+      window.__jlAutoResumed = true;
+    }).catch(() => {});
+  }
+  window.loadDriverCourses = loadDriverCourses;
+
   async function advanceCourseWithCode(){
     const c = window.currentCourse;
     const btn = document.getElementById('courseBtn');
@@ -8288,6 +8375,7 @@
       const out = (res && res.data) || {};
       if(step === 'pickup' && !out.completed){
         courseStep = 1;
+        jlSaveCourseStep(1);
         updateCourseContactButtons();
         jlSyncCourseCodeUi();
         if(c.dropoffCoords) renderCourseMap(); else finishCourseStep();
@@ -8304,6 +8392,7 @@
     const btn = document.getElementById('courseBtn');
     if(courseStep === 0){
       courseStep = 1;
+      jlSaveCourseStep(1);
       const hasDropoff = window.currentCourse && window.currentCourse.dropoffCoords;
       btn.textContent = 'Marquer comme livré';
       updateCourseContactButtons();
