@@ -196,6 +196,7 @@
       <li class="nav-item" data-page="reports" onclick="switchAdminPage('reports')"><i data-feather="flag"></i>Signalements<span class="badge-count" id="navReportsCount">0</span></li>
     <li class="nav-item" data-page="ads" onclick="switchAdminPage('ads')"><i data-feather="image"></i>Publicités</li>
     <li class="nav-item" data-page="disputes" onclick="switchAdminPage('disputes')"><i data-feather="search"></i>Litiges / Tickets</li>
+    <li class="nav-item" data-page="places" onclick="switchAdminPage('places')"><i data-feather="map-pin"></i>Lieux</li>
     <li class="nav-item" data-page="withdrawals" onclick="switchAdminPage('withdrawals')"><i data-feather="arrow-up-right"></i>Retraits<span class="badge-count" id="navWithdrawalsCount">0</span></li>
     <li class="nav-item" data-page="commissions" onclick="switchAdminPage('commissions')"><i data-feather="percent"></i>Commissions<span class="badge-count" id="navCommissionsCount">0</span></li>
     <li class="nav-item" data-page="remittances" onclick="switchAdminPage('remittances')"><i data-feather="repeat"></i>Reversements<span class="badge-count" id="navRemittancesCount">0</span></li>
@@ -419,6 +420,32 @@
     </div>
 
     <!-- PAIEMENTS EN LIGNE (confirmés par le serveur, jamais par le téléphone du client) -->
+    <div class="page" id="page-places">
+      <div class="panel">
+        <div class="panel-head"><h2>Lieux de la carte Je Livre</h2><span class="sub">Les clients tapent un nom (quartier, marché, repère) : l'app cherche d'abord ici. Corrigez un lieu mal placé ou ajoutez un lieu manquant en cliquant sur la carte. Un lieu corrigé ici n'est jamais écrasé par un nouvel import.</span></div>
+        <div style="display:flex;gap:10px;padding:0 4px 12px">
+          <input id="placeSearch" type="text" placeholder="Rechercher un lieu (ex. Zogona)" style="flex:1;padding:11px 14px;border:1.5px solid #E7E5DF;border-radius:10px;font-size:14px" onkeydown="if(event.key==='Enter') searchPlaces()">
+          <button class="btn btn-yellow" onclick="searchPlaces()">Rechercher</button>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>Nom</th><th>Type</th><th>Position</th><th>Source</th><th></th></tr></thead>
+          <tbody id="placesTableBody"><tr class="empty-row"><td colspan="5">Tapez un nom pour chercher.</td></tr></tbody>
+        </table>
+      </div>
+      <div class="panel" style="margin-top:16px">
+        <div class="panel-head"><h2 id="placeFormTitle">Ajouter un lieu</h2><span class="sub">Cliquez sur la carte à l'endroit exact : la latitude et la longitude se remplissent.</span></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:0 4px 12px">
+          <input id="placeName" placeholder="Nom du lieu" style="padding:10px 12px;border:1.5px solid #E7E5DF;border-radius:10px">
+          <select id="placeType" style="padding:10px 12px;border:1.5px solid #E7E5DF;border-radius:10px"><option>Quartier</option><option>Marché</option><option>Hôtel</option><option>École</option><option>Hôpital</option><option>Station</option><option>Banque</option><option>Lieu</option></select>
+          <input id="placeLat" placeholder="Latitude" style="padding:10px 12px;border:1.5px solid #E7E5DF;border-radius:10px">
+          <input id="placeLng" placeholder="Longitude" style="padding:10px 12px;border:1.5px solid #E7E5DF;border-radius:10px">
+        </div>
+        <div id="placeMap" style="height:340px;border-radius:12px;margin:0 4px 12px"></div>
+        <div style="padding:0 4px 8px;display:flex;gap:10px"><button class="btn btn-yellow" onclick="savePlace()">Enregistrer</button><button class="btn btn-outline" onclick="resetPlaceForm()">Nouveau</button></div>
+        <div id="placeMsg" style="padding:0 4px;font-size:13px;color:var(--text-soft)"></div>
+      </div>
+    </div>
+
     <div class="page" id="page-disputes">
       <div class="panel">
         <div class="panel-head"><h2>Recherche de litige</h2><span class="sub">Collez un ticket (LIV-…, CMD-…, PAY-…, RET-…), une référence de transaction (JL…), une référence HorusPay, un numéro de suivi (JL-12345) ou un téléphone. Tout ce qui est lié apparaît ensemble.</span></div>
@@ -532,10 +559,11 @@
   function switchAdminPage(page){
     document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + page));
     document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.page === page));
-    const titles = { overview:'Tableau de bord', reports:'Signalements', live:'Connectés en direct', registrations:'Inscriptions', deliveries:'Livraisons en cours', support:'Service client', ads:'Publicités', withdrawals:'Retraits', commissions:'Commissions', remittances:'Reversements', payments:'Paiements', disputes:'Litiges / Tickets' };
+    const titles = { overview:'Tableau de bord', reports:'Signalements', live:'Connectés en direct', registrations:'Inscriptions', deliveries:'Livraisons en cours', support:'Service client', ads:'Publicités', withdrawals:'Retraits', commissions:'Commissions', remittances:'Reversements', payments:'Paiements', disputes:'Litiges / Tickets', places:'Lieux (carte Je Livre)' };
     document.getElementById('pageTitle').textContent = titles[page] || '';
     if(page === 'live') setTimeout(() => { if(liveMap) liveMap.invalidateSize(); }, 100);
     if(page === 'ads') initAdForm();
+    if(page === 'places') initPlacesPage();
   }
   window.switchAdminPage = switchAdminPage;
 
@@ -1323,6 +1351,80 @@
   }
   window.markPaymentReviewed = markPaymentReviewed;
 
+  // ================= Lieux de la carte Je Livre =================
+  let placeMap = null, placeMarker = null, editingPlaceId = null, foundPlaces = {};
+  function normPlace(s){
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[’'`\-_/.,()]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function initPlacesPage(){
+    setTimeout(() => {
+      if(!placeMap && typeof L !== 'undefined'){
+        placeMap = L.map('placeMap').setView([12.3714, -1.5197], 12);
+        L.tileLayer(MAP_TILE_URL, { attribution: MAP_TILE_ATTRIBUTION, maxZoom: 20 }).addTo(placeMap);
+        placeMap.on('click', (e) => setPlacePoint(e.latlng.lat, e.latlng.lng));
+      }
+      if(placeMap) placeMap.invalidateSize();
+    }, 100);
+  }
+  function setPlacePoint(lat, lng){
+    document.getElementById('placeLat').value = lat.toFixed(5);
+    document.getElementById('placeLng').value = lng.toFixed(5);
+    if(placeMarker) placeMarker.setLatLng([lat, lng]); else placeMarker = L.marker([lat, lng]).addTo(placeMap);
+  }
+  function searchPlaces(){
+    const q = normPlace(document.getElementById('placeSearch').value);
+    const tbody = document.getElementById('placesTableBody');
+    if(q.length < 2){ tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Tapez au moins 2 lettres.</td></tr>'; return; }
+    db.ref('places').orderByChild('k').startAt(q).endAt(q + '\uf8ff').limitToFirst(50).once('value').then((snap) => {
+      foundPlaces = snap.val() || {};
+      const e = Object.entries(foundPlaces);
+      tbody.innerHTML = e.length ? e.map(([id, p]) => `<tr>
+        <td><b>${escapeHtml(p.n)}</b></td><td>${escapeHtml(p.t || '')}</td>
+        <td>${Number(p.lat).toFixed(5)}, ${Number(p.lng).toFixed(5)}</td>
+        <td>${p.s === 'admin' ? 'Équipe Je Livre' : 'GeoNames'}${p.fixed ? ' · corrigé' : ''}</td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn btn-outline btn-sm" onclick="editPlace('${escapeHtml(id)}')">Modifier</button> <button class="btn btn-red btn-sm" onclick="deletePlace('${escapeHtml(id)}')">Supprimer</button></td></tr>`).join('')
+        : '<tr class="empty-row"><td colspan="5">Aucun lieu trouvé. Ajoutez-le ci-dessous.</td></tr>';
+    }).catch((err) => { tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Erreur : ' + escapeHtml(err.message) + '</td></tr>'; });
+  }
+  window.searchPlaces = searchPlaces;
+  function editPlace(id){
+    const p = foundPlaces[id]; if(!p) return;
+    editingPlaceId = id;
+    document.getElementById('placeFormTitle').textContent = 'Modifier : ' + p.n;
+    document.getElementById('placeName').value = p.n;
+    const sel = document.getElementById('placeType'); if(!Array.from(sel.options).some((o) => o.text === p.t)) sel.add(new Option(p.t || 'Lieu')); sel.value = p.t || 'Lieu';
+    initPlacesPage();
+    setTimeout(() => { setPlacePoint(p.lat, p.lng); placeMap.setView([p.lat, p.lng], 16); }, 200);
+    document.getElementById('placeName').scrollIntoView({ behavior: 'smooth' });
+  }
+  window.editPlace = editPlace;
+  function resetPlaceForm(){
+    editingPlaceId = null;
+    document.getElementById('placeFormTitle').textContent = 'Ajouter un lieu';
+    ['placeName','placeLat','placeLng'].forEach((i) => { document.getElementById(i).value = ''; });
+    if(placeMarker && placeMap){ placeMap.removeLayer(placeMarker); placeMarker = null; }
+    document.getElementById('placeMsg').textContent = '';
+  }
+  window.resetPlaceForm = resetPlaceForm;
+  function savePlace(){
+    const n = document.getElementById('placeName').value.trim();
+    const lat = parseFloat(document.getElementById('placeLat').value), lng = parseFloat(document.getElementById('placeLng').value);
+    const msg = document.getElementById('placeMsg');
+    if(!n || isNaN(lat) || isNaN(lng)){ msg.textContent = 'Nom, latitude et longitude sont obligatoires (cliquez sur la carte).'; msg.style.color = '#B3261E'; return; }
+    const id = editingPlaceId || ('a_' + Date.now().toString(36));
+    const rec = { n: n.slice(0, 80), k: normPlace(n), lat: Math.round(lat * 1e5) / 1e5, lng: Math.round(lng * 1e5) / 1e5,
+      t: document.getElementById('placeType').value, s: (foundPlaces[id] && foundPlaces[id].s === 'geonames') ? 'geonames' : 'admin', fixed: true, at: firebase.database.ServerValue.TIMESTAMP };
+    if(foundPlaces[id] && foundPlaces[id].o) rec.o = 1;
+    db.ref('places/' + id).set(rec).then(() => { msg.style.color = '#188038'; msg.textContent = 'Enregistré : « ' + n + ' » est maintenant disponible dans la recherche de l\'app.'; resetPlaceForm(); })
+      .catch((e) => { msg.style.color = '#B3261E'; msg.textContent = 'Erreur : ' + e.message; });
+  }
+  window.savePlace = savePlace;
+  function deletePlace(id){
+    const p = foundPlaces[id]; if(!p || !confirm('Supprimer « ' + p.n + ' » ?')) return;
+    db.ref('places/' + id).remove().then(searchPlaces).catch((e) => alert('Erreur : ' + e.message));
+  }
+  window.deletePlace = deletePlace;
+
   // ================= Litiges : retrouver tout un dossier à partir d'un ticket =================
   function dateFr(ts){ return ts ? new Date(ts).toLocaleString('fr-FR') : '—'; }
   function copyText(t){ try { navigator.clipboard.writeText(t); } catch(e){ prompt('Copiez :', t); } }
@@ -1682,11 +1784,11 @@ if(db){ db.ref('presence').on('value', (snap) => { allPresence = snap.val() || {
     registrations: 'Inscriptions', ops: 'Opérations',
   };
   const ROLE_PAGES = {
-    super_admin: ['overview','live','registrations','deliveries','disputes','support','reports','ads','withdrawals','commissions','remittances','payments','managers'],
+    super_admin: ['overview','live','registrations','deliveries','disputes','places','support','reports','ads','withdrawals','commissions','remittances','payments','managers'],
     support: ['overview','support','reports','disputes'],
     ads: ['overview','ads'],
     registrations: ['overview','registrations'],
-    ops: ['overview','live','deliveries','disputes'],
+    ops: ['overview','live','deliveries','disputes','places'],
   };
   let currentAdminUser = null;
   let allManagers = {};

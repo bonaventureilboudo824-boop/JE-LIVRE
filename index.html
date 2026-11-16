@@ -4185,43 +4185,71 @@
     });
   }
 
+  // ---- Base de lieux Je Livre (quartiers, repères) : consultée EN PREMIER ----
+  // Les noms sont comparés sans accents ni majuscules. Les lieux viennent de GeoNames et
+  // sont corrigés / complétés par l'équipe dans l'admin (page « Lieux »).
+  function jlNormPlace(s){
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[’'`\-_/.,()]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  async function searchLocalPlaces(query){
+    const k = jlNormPlace(query);
+    if(k.length < 2 || typeof firebase === 'undefined') return [];
+    const snap = await firebase.database().ref('places').orderByChild('k').startAt(k).endAt(k + '').limitToFirst(60).once('value');
+    const ref = window.senderCoords || { lat: OUAGA_CENTER[0], lng: OUAGA_CENTER[1] };
+    const list = Object.values(snap.val() || {}).map((p) => ({
+      label: p.n, lat: p.lat, lon: p.lng, tag: p.t || 'Lieu',
+      d: window.GeoUtils.haversineDistanceKm(ref.lat, ref.lng, p.lat, p.lng),
+    }));
+    // Les homonymes du pays entier (ex. 3 « Kossodo ») : le plus proche d'abord ; les doublons au même endroit sont fusionnés.
+    list.sort((x, y) => x.d - y.d);
+    const out = [];
+    for(const it of list){
+      if(!out.some((o) => jlNormPlace(o.label) === jlNormPlace(it.label) && window.GeoUtils.haversineDistanceKm(o.lat, o.lon, it.lat, it.lon) < 0.3)) out.push(it);
+      if(out.length >= 6) break;
+    }
+    return out;
+  }
+  async function searchStadiaPlaces(query){
+    // Même compte/clé que le fond de carte (voir MAP_TILE_URL).
+    const apiKey = MAP_TILE_URL.split('api_key=')[1];
+    const url = 'https://api.stadiamaps.com/geocoding/v1/autocomplete?api_key=' + apiKey
+      + '&text=' + encodeURIComponent(query)
+      + '&focus.point.lat=12.3714&focus.point.lon=-1.5197&boundary.country=BFA&lang=fr';
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      const data = await res.json();
+      return (data.features || []).map((f) => ({ label: f.properties.label, lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] }));
+    } finally { clearTimeout(timeoutId); }
+  }
+
   async function fetchAddressSuggestions(query, box, input, onSelect){
     box.innerHTML = '<div class="addr-sugg-empty">Recherche…</div>';
     box.classList.add('show');
-    try {
-      // Même compte/clé que le fond de carte (voir MAP_TILE_URL) : Stadia
-      // Maps a aussi une API de géocodage/autocomplétion adaptée à la
-      // production, contrairement à Nominatim (nominatim.openstreetmap.org)
-      // qui est réservé à un usage léger et non commercial.
-      const apiKey = MAP_TILE_URL.split('api_key=')[1];
-      const url = 'https://api.stadiamaps.com/geocoding/v1/autocomplete?api_key=' + apiKey
-        + '&text=' + encodeURIComponent(query)
-        + '&focus.point.lat=12.3714&focus.point.lon=-1.5197&boundary.country=BFA&lang=fr';
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      const data = await res.json();
-      const results = (data.features || []).map((f) => ({
-        label: f.properties.label,
-        lat: f.geometry.coordinates[1],
-        lon: f.geometry.coordinates[0],
-      }));
-      if(!results.length){ box.innerHTML = '<div class="addr-sugg-empty">Aucun résultat</div>'; return; }
-      box.innerHTML = results.map((r, i) => `<div class="addr-sugg-item" data-i="${i}"><i data-feather="map-pin"></i><span>${escapeHtml(r.label)}</span></div>`).join('');
-      feather.replace({ 'stroke-width': 2.25 });
-      box.querySelectorAll('.addr-sugg-item').forEach((el) => {
-        el.addEventListener('click', () => {
-          const r = results[Number(el.dataset.i)];
-          input.value = r.label;
-          box.classList.remove('show');
-          box.innerHTML = '';
-          if(onSelect) onSelect({ lat: r.lat, lng: r.lon, label: r.label });
-        });
-      });
-    } catch(e){
-      box.innerHTML = '<div class="addr-sugg-empty">Recherche indisponible pour le moment</div>';
+    // Les deux sources en parallèle : si l'une tombe en panne, l'autre répond quand même.
+    const [localRes, stadiaRes] = await Promise.allSettled([searchLocalPlaces(query), searchStadiaPlaces(query)]);
+    const local = localRes.status === 'fulfilled' ? localRes.value : [];
+    let external = stadiaRes.status === 'fulfilled' ? stadiaRes.value : [];
+    // On retire du géocodeur ce que la base Je Livre connaît déjà (même nom, moins de 300 m).
+    external = external.filter((e) => !local.some((l) => jlNormPlace(e.label).startsWith(jlNormPlace(l.label)) && window.GeoUtils.haversineDistanceKm(l.lat, l.lon, e.lat, e.lon) < 0.3));
+    const results = local.concat(external).slice(0, 10);
+    if(!results.length){
+      box.innerHTML = '<div class="addr-sugg-empty">' + (stadiaRes.status === 'rejected' && localRes.status === 'rejected' ? 'Recherche indisponible pour le moment' : 'Aucun résultat') + '</div>';
+      return;
     }
+    box.innerHTML = results.map((r, i) => `<div class="addr-sugg-item" data-i="${i}"><i data-feather="${r.tag ? 'map' : 'map-pin'}"></i><span>${escapeHtml(r.label)}${r.tag ? ' <small style="color:#6E6C66">· ' + escapeHtml(r.tag) + '</small>' : ''}</span></div>`).join('');
+    try { feather.replace({ 'stroke-width': 2.25 }); } catch(e){ /* ignoré */ }
+    box.querySelectorAll('.addr-sugg-item').forEach((el) => {
+      el.addEventListener('click', () => {
+        const r = results[Number(el.dataset.i)];
+        input.value = r.label;
+        box.classList.remove('show');
+        box.innerHTML = '';
+        if(onSelect) onSelect({ lat: r.lat, lng: r.lon, label: r.label });
+      });
+    });
   }
 
 
