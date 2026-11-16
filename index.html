@@ -235,6 +235,9 @@
     margin-top:14px; background:var(--card); border:1px solid var(--border); border-radius:var(--radius-md); padding:15px;
   }
   .order-card .top{ display:flex; align-items:center; justify-content:space-between; }
+  .fs-arrow-wrap{ position:relative; width:56px; height:56px; }
+  .fs-arrow-wrap .pulse{ position:absolute; inset:0; border-radius:50%; background:rgba(66,133,244,.18); border:1px solid rgba(66,133,244,.35); }
+  .fs-arrow-wrap .arrow{ position:absolute; inset:8px; transition:transform .45s linear; filter:drop-shadow(0 2px 3px rgba(0,0,0,.4)); }
   .jl-ticket{ display:inline-flex; align-items:center; gap:5px; margin-top:4px; font-size:11px; font-weight:700; letter-spacing:.3px; color:var(--text-soft,#6E6C66); background:#F1EFE9; border-radius:6px; padding:3px 7px; cursor:pointer; user-select:all; }
   .order-card .id{ font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:15px; }
   .status-chip{ font-size:11px; font-weight:700; padding:4px 9px; border-radius:999px; }
@@ -2107,17 +2110,32 @@
 </div>
 
 <!-- NAVIGATION PLEIN ÉCRAN (livreur) -->
-<div id="fullscreenNav" style="display:none; position:fixed; inset:0; z-index:9999; background:#111;">
+<div id="fullscreenNav" style="display:none; position:fixed; inset:0; z-index:9999; background:#E8EAED;">
   <div id="fullscreenNavMap" style="position:absolute; inset:0; z-index:0;"></div>
-  <button id="closeFullscreenNav" onclick="closeFullscreenNav()" style="position:absolute; top:18px; left:18px; z-index:20; width:42px; height:42px; border-radius:50%; background:#0D0D0C; color:#fff; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer; box-shadow:0 4px 12px rgba(0,0,0,.4);">
-    <i data-feather="x" style="width:20px;height:20px"></i>
-  </button>
-  <div style="position:absolute; bottom:0; left:0; right:0; z-index:20; background:#0D0D0C; padding:20px 22px 28px; border-radius:24px 24px 0 0; box-shadow:0 -10px 30px rgba(0,0,0,.4);">
-    <div style="font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:12px; color:#FFC629; letter-spacing:.04em; text-transform:uppercase;">En route vers le client</div>
-    <div style="display:flex; align-items:baseline; gap:10px; margin-top:6px;">
-      <b id="fsNavEta" style="font-family:'Barlow Condensed',sans-serif; font-weight:900; font-size:30px; color:#fff;">—</b>
-      <span id="fsNavDist" style="font-size:13px; color:#BFBEB8;">—</span>
+  <!-- Bandeau de manœuvre (style navigation Google Maps) -->
+  <div id="fsBanner" style="position:absolute; top:0; left:0; right:0; z-index:20; background:#1E8E3E; color:#fff; padding:calc(14px + env(safe-area-inset-top,0px)) 16px 14px 66px; box-shadow:0 2px 10px rgba(0,0,0,.3); min-height:64px;">
+    <button id="closeFullscreenNav" onclick="closeFullscreenNav()" aria-label="Fermer la navigation" style="position:absolute; top:calc(12px + env(safe-area-inset-top,0px)); left:12px; width:42px; height:42px; border-radius:50%; background:rgba(255,255,255,.18); color:#fff; border:none; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+      <i data-feather="x" style="width:22px;height:22px"></i>
+    </button>
+    <div style="display:flex; align-items:center; gap:12px;">
+      <div id="fsBannerIcon" style="font-size:34px; line-height:1; width:38px; text-align:center;">↑</div>
+      <div style="min-width:0">
+        <div id="fsBannerDist" style="font-size:26px; font-weight:700; line-height:1.1;">—</div>
+        <div id="fsBannerText" style="font-size:15px; opacity:.95; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Recherche de votre position…</div>
+      </div>
     </div>
+  </div>
+  <button id="fsRecenter" onclick="fsRecenter()" style="display:none; position:absolute; right:14px; bottom:150px; z-index:20; height:44px; padding:0 16px; border-radius:22px; background:#fff; color:#1A73E8; border:none; font-weight:700; font-size:14px; box-shadow:0 2px 8px rgba(0,0,0,.3); cursor:pointer;">⌖ Recentrer</button>
+  <!-- Panneau du bas : durée en vert, distance en gris, comme Google Maps -->
+  <div style="position:absolute; bottom:0; left:0; right:0; z-index:20; background:#fff; padding:14px 20px calc(18px + env(safe-area-inset-bottom,0px)); border-radius:20px 20px 0 0; box-shadow:0 -4px 16px rgba(0,0,0,.25); display:flex; align-items:center; justify-content:space-between; gap:12px;">
+    <div>
+      <div style="display:flex; align-items:baseline; gap:10px;">
+        <b id="fsNavEta" style="font-size:28px; font-weight:700; color:#188038;">—</b>
+        <span id="fsNavDist" style="font-size:15px; color:#5F6368;">—</span>
+      </div>
+      <div id="fsNavArrival" style="font-size:13px; color:#5F6368; margin-top:2px;"></div>
+    </div>
+    <button onclick="closeFullscreenNav()" style="height:44px; padding:0 20px; border-radius:22px; background:#D93025; color:#fff; border:none; font-weight:700; font-size:15px; cursor:pointer;">Quitter</button>
   </div>
 </div>
 
@@ -4132,7 +4150,15 @@
       iconSize: [s, s],
     });
   }
-  const ROUTE_COLOR = '#1A73E8';
+  const ROUTE_COLOR = '#4285F4'; // bleu de l'itinéraire Google Maps
+  // Fond de carte clair et sobre (même famille de couleurs que Google Maps) pour la navigation.
+  const NAV_TILE_URL = MAP_TILE_URL.replace('osm_bright', 'alidade_smooth');
+  function navRouteLayer(map, coords, weight){
+    const g = L.layerGroup();
+    L.polyline(coords, { color: '#1558B0', weight: weight + 4, opacity: 1, lineCap: 'round', lineJoin: 'round' }).addTo(g);
+    L.polyline(coords, { color: ROUTE_COLOR, weight, opacity: 1, lineCap: 'round', lineJoin: 'round' }).addTo(g);
+    return g.addTo(map);
+  }
 
   // ---- Auto-simulation : garantit qu'il y a toujours des livreurs à trouver
   // pour la démo, sauf si un simulateur externe (ex. je-livre-tracking-demo.html)
@@ -4280,7 +4306,7 @@
 
     if (!courseMap) {
       courseMap = L.map('courseMapReal', { zoomControl: false }).setView([target.lat, target.lng], 13);
-      L.tileLayer(MAP_TILE_URL, { attribution: MAP_TILE_ATTRIBUTION, maxZoom: 20 }).addTo(courseMap);
+      L.tileLayer(NAV_TILE_URL, { attribution: MAP_TILE_ATTRIBUTION, maxZoom: 20 }).addTo(courseMap);
     }
     if (courseClientMarker) courseMap.removeLayer(courseClientMarker);
     if (courseCourierMarker) courseMap.removeLayer(courseCourierMarker);
@@ -4319,53 +4345,145 @@
       coords = [[origin.lat, origin.lng], [target.lat, target.lng]];
     }
 
-    courseRouteLine = L.polyline(coords, { color: ROUTE_COLOR, weight: 5, opacity: 0.9 }).addTo(courseMap);
-    courseMap.fitBounds(courseRouteLine.getBounds(), { padding: [40, 40] });
+    courseRouteLine = navRouteLayer(courseMap, coords, 6);
+    courseMap.fitBounds(L.polyline(coords).getBounds(), { padding: [40, 40] });
     if (etaLabel) etaLabel.textContent = durationMin + ' min';
     if (distLabel) distLabel.textContent = distanceKm.toFixed(1) + ' km';
   }
 
-  // ---- Navigation plein écran (position du livreur suivie en direct) ----
+  // ---- Navigation plein écran (style Google Maps) : zoom proche, flèche orientée, carte qui suit ----
   let fsMap = null, fsClientMarker = null, fsCourierMarker = null, fsRouteLine = null, fsWatchId = null;
   let fsClient = null, fsLastCourier = null, fsRouteTimer = null, fsFetchingRoute = false;
+  let fsFollow = true, fsFirstFix = true, fsHeading = 0, fsPrev = null, fsSteps = [], fsStepIdx = 1, fsAvgSpeed = 8, fsLastSpeed = 0;
+
+  function fsArrowIcon(){
+    return L.divIcon({
+      className: '', iconSize: [56, 56], iconAnchor: [28, 28],
+      html: '<div class="fs-arrow-wrap"><div class="pulse"></div><svg class="arrow" id="fsArrowSvg" viewBox="0 0 24 24"><path d="M12 2 L20 21 L12 17 L4 21 Z" fill="#4285F4" stroke="#fff" stroke-width="2" stroke-linejoin="round"/></svg></div>',
+    });
+  }
+  function fsDestIcon(){
+    return L.divIcon({
+      className: '', iconSize: [30, 40], iconAnchor: [15, 38],
+      html: '<svg width="30" height="40" viewBox="0 0 24 32"><path d="M12 0C5.4 0 0 5.2 0 11.7 0 20 12 32 12 32s12-12 12-20.3C24 5.2 18.6 0 12 0z" fill="#EA4335"/><circle cx="12" cy="11.5" r="4.5" fill="#fff"/></svg>',
+    });
+  }
+  function fsBearing(a, b){
+    const r = Math.PI / 180, y = Math.sin((b.lng - a.lng) * r) * Math.cos(b.lat * r);
+    const x = Math.cos(a.lat * r) * Math.sin(b.lat * r) - Math.sin(a.lat * r) * Math.cos(b.lat * r) * Math.cos((b.lng - a.lng) * r);
+    return (Math.atan2(y, x) / r + 360) % 360;
+  }
+  function fsSetHeading(deg){
+    // rotation par le chemin le plus court (évite le tour complet quand on passe de 350° à 10°)
+    let d = ((deg - fsHeading) % 360 + 540) % 360 - 180;
+    fsHeading += d;
+    const el = document.getElementById('fsArrowSvg');
+    if (el) el.style.transform = 'rotate(' + fsHeading + 'deg)';
+  }
+  function fsZoomForSpeed(ms){ return ms > 16 ? 16 : (ms > 8 ? 17 : 18); }
+  function fsCenterAhead(pos, zoom){
+    // la flèche est placée dans le tiers bas de l'écran, pour voir la route devant
+    const size = fsMap.getSize();
+    const px = fsMap.project(L.latLng(pos.lat, pos.lng), zoom).subtract([0, size.y * 0.18]);
+    return fsMap.unproject(px, zoom);
+  }
+  function fsRecenter(){ fsFollow = true; document.getElementById('fsRecenter').style.display = 'none'; if (fsLastCourier) fsFollowTo(fsLastCourier, true); }
+  window.fsRecenter = fsRecenter;
+  function fsFollowTo(pos, animate){
+    const z = fsZoomForSpeed(fsLastSpeed);
+    const c = fsCenterAhead(pos, z);
+    if (animate) fsMap.flyTo(c, z, { duration: 1.1 }); else fsMap.setView(c, z, { animate: true, duration: 0.8 });
+  }
+
+  function fsManeuverText(st){
+    const m = (st && st.maneuver) || {}, mod = m.modifier || '', t = m.type || '';
+    const side = { 'left': 'à gauche', 'right': 'à droite', 'slight left': 'légèrement à gauche', 'slight right': 'légèrement à droite', 'sharp left': 'franchement à gauche', 'sharp right': 'franchement à droite' };
+    const icon = { 'left': '↰', 'right': '↱', 'slight left': '↖', 'slight right': '↗', 'sharp left': '↰', 'sharp right': '↱', 'uturn': '↩', 'straight': '↑' };
+    const road = st && st.name ? ' sur ' + st.name : '';
+    if (t === 'arrive') return { icon: '⚑', text: 'Vous êtes arrivé' + (mod === 'left' ? ' (à gauche)' : mod === 'right' ? ' (à droite)' : '') };
+    if (t === 'roundabout' || t === 'rotary' || t === 'roundabout turn') return { icon: '⟳', text: 'Au rond-point, prenez la ' + (m.exit || 1) + (m.exit === 1 ? 're' : 'e') + ' sortie' + road };
+    if (mod === 'uturn') return { icon: '↩', text: 'Faites demi-tour' + road };
+    if (t === 'fork') return { icon: icon[mod] || '↑', text: 'Serrez ' + (side[mod] || 'à droite') + road };
+    if (t === 'merge') return { icon: icon[mod] || '↑', text: 'Insérez-vous' + road };
+    if (t === 'continue' || t === 'new name' || mod === 'straight' || !mod) return { icon: '↑', text: 'Continuez tout droit' + road };
+    return { icon: icon[mod] || '↑', text: 'Tournez ' + (side[mod] || '') + road };
+  }
+  function fsFmtDist(m){ return m >= 1000 ? (m / 1000).toFixed(1).replace('.', ',') + ' km' : (Math.round(m / 10) * 10) + ' m'; }
+  function fsUpdateBanner(courier){
+    const iconEl = document.getElementById('fsBannerIcon'), dEl = document.getElementById('fsBannerDist'), tEl = document.getElementById('fsBannerText');
+    if (!fsSteps.length) {
+      const km = window.GeoUtils.haversineDistanceKm(courier.lat, courier.lng, fsClient.lat, fsClient.lng) * 1000;
+      iconEl.textContent = '↑'; dEl.textContent = fsFmtDist(km); tEl.textContent = 'Rejoignez la destination';
+      return;
+    }
+    // avance quand le point de manœuvre est dépassé (moins de 25 m)
+    while (fsStepIdx < fsSteps.length - 1) {
+      const loc = fsSteps[fsStepIdx].maneuver.location;
+      if (window.GeoUtils.haversineDistanceKm(courier.lat, courier.lng, loc[1], loc[0]) * 1000 < 25) fsStepIdx++; else break;
+    }
+    const st = fsSteps[Math.min(fsStepIdx, fsSteps.length - 1)];
+    const loc = st.maneuver.location;
+    const dm = window.GeoUtils.haversineDistanceKm(courier.lat, courier.lng, loc[1], loc[0]) * 1000;
+    const mt = fsManeuverText(st);
+    iconEl.textContent = mt.icon; dEl.textContent = fsFmtDist(dm); tEl.textContent = mt.text;
+  }
 
   function openFullscreenNav(){
     const course = window.currentCourse;
     const usingDropoff = courseStep >= 1 && course && course.dropoffCoords;
     fsClient = (usingDropoff ? course.dropoffCoords : (course && course.clientCoords)) || { lat: OUAGA_CENTER[0], lng: OUAGA_CENTER[1] };
+    fsFollow = true; fsFirstFix = true; fsPrev = null; fsSteps = []; fsStepIdx = 1; fsLastSpeed = 0; fsLastCourier = null;
+    document.getElementById('fsRecenter').style.display = 'none';
+    document.getElementById('fsBannerText').textContent = 'Recherche de votre position…';
+    document.getElementById('fsBannerDist').textContent = '—';
     const overlay = document.getElementById('fullscreenNav');
     overlay.style.display = 'block';
 
     setTimeout(() => {
       if (!fsMap) {
-        fsMap = L.map('fullscreenNavMap', { zoomControl: false }).setView([fsClient.lat, fsClient.lng], 15);
-        L.tileLayer(MAP_TILE_URL, { attribution: MAP_TILE_ATTRIBUTION, maxZoom: 20 }).addTo(fsMap);
+        fsMap = L.map('fullscreenNavMap', { zoomControl: false, attributionControl: false }).setView([fsClient.lat, fsClient.lng], 15);
+        L.tileLayer(NAV_TILE_URL, { maxZoom: 20 }).addTo(fsMap);
+        fsMap.on('dragstart', () => { fsFollow = false; document.getElementById('fsRecenter').style.display = 'block'; });
       }
       fsMap.invalidateSize();
       if (fsClientMarker) fsMap.removeLayer(fsClientMarker);
-      const clientIcon = L.divIcon({ className: '', html: '📍', iconSize: [30, 30] });
-      fsClientMarker = L.marker([fsClient.lat, fsClient.lng], { icon: clientIcon }).addTo(fsMap);
+      if (fsCourierMarker) { fsMap.removeLayer(fsCourierMarker); fsCourierMarker = null; }
+      if (fsRouteLine) { fsMap.removeLayer(fsRouteLine); fsRouteLine = null; }
+      fsClientMarker = L.marker([fsClient.lat, fsClient.lng], { icon: fsDestIcon() }).addTo(fsMap);
+      try { feather.replace({ 'stroke-width': 2.25 }); } catch(e){ /* ignoré */ }
 
       if (!navigator.geolocation) return;
       fsWatchId = navigator.geolocation.watchPosition((pos) => {
         const courier = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        const speed = (typeof pos.coords.speed === 'number' && pos.coords.speed >= 0) ? pos.coords.speed : 0;
+        fsLastSpeed = speed;
+        // Cap : boussole du GPS si on roule, sinon direction du déplacement
+        let heading = null;
+        if (typeof pos.coords.heading === 'number' && !isNaN(pos.coords.heading) && speed > 1.5) heading = pos.coords.heading;
+        else if (fsPrev && window.GeoUtils.haversineDistanceKm(fsPrev.lat, fsPrev.lng, courier.lat, courier.lng) * 1000 > 6) heading = fsBearing(fsPrev, courier);
+        if (!fsPrev || window.GeoUtils.haversineDistanceKm(fsPrev.lat, fsPrev.lng, courier.lat, courier.lng) * 1000 > 6) fsPrev = courier;
         fsLastCourier = courier;
-        if (!fsCourierMarker) {
-          fsCourierMarker = L.marker([courier.lat, courier.lng], { icon: driverDotIcon(20) }).addTo(fsMap);
-        } else {
-          fsCourierMarker.setLatLng([courier.lat, courier.lng]);
-        }
+
+        if (!fsCourierMarker) fsCourierMarker = L.marker([courier.lat, courier.lng], { icon: fsArrowIcon(), zIndexOffset: 1000 }).addTo(fsMap);
+        else fsCourierMarker.setLatLng([courier.lat, courier.lng]);
+        if (heading !== null) fsSetHeading(heading);
+        else if (fsFirstFix) fsSetHeading(fsBearing(courier, fsClient)); // avant de rouler : vers la destination
 
         const distanceKm = window.GeoUtils.haversineDistanceKm(courier.lat, courier.lng, fsClient.lat, fsClient.lng);
-        const etaMin = window.GeoUtils.estimateEtaMinutes(distanceKm, 'Moto');
+        const etaMin = Math.max(1, Math.round((distanceKm * 1000 * 1.25) / Math.max(fsAvgSpeed, 2) / 60));
         document.getElementById('fsNavEta').textContent = etaMin + ' min';
-        document.getElementById('fsNavDist').textContent = distanceKm.toFixed(2) + ' km restants';
-        fsMap.setView([courier.lat, courier.lng], fsMap.getZoom());
+        document.getElementById('fsNavDist').textContent = fsFmtDist(distanceKm * 1000);
+        const arr = new Date(Date.now() + etaMin * 60000);
+        document.getElementById('fsNavArrival').textContent = 'Arrivée ' + String(arr.getHours()).padStart(2, '0') + ':' + String(arr.getMinutes()).padStart(2, '0');
+        fsUpdateBanner(courier);
 
+        if (fsFollow) { fsFollowTo(courier, fsFirstFix); }
+        fsFirstFix = false;
         fsRefreshRoute(); // trace le vrai itinéraire routier (throttlé, pas à chaque position)
       }, (err) => {
         console.warn('[Je Livre] Navigation :', err.message);
-      }, { enableHighAccuracy: true, maximumAge: 3000, timeout: 10000 });
+        document.getElementById('fsBannerText').textContent = 'Activez la localisation pour naviguer';
+      }, { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 });
 
       // Recalcule le tracé routier toutes les 15 secondes pendant le trajet
       if (fsRouteTimer) clearInterval(fsRouteTimer);
@@ -4378,21 +4496,26 @@
     if (fsFetchingRoute || !fsLastCourier || !fsClient || !fsMap) return;
     fsFetchingRoute = true;
     const courier = fsLastCourier;
-    let coords;
+    let coords, steps = [];
     try {
-      const url = `https://router.project-osrm.org/route/v1/driving/${courier.lng},${courier.lat};${fsClient.lng},${fsClient.lat}?overview=full&geometries=geojson`;
+      const url = `https://router.project-osrm.org/route/v1/driving/${courier.lng},${courier.lat};${fsClient.lng},${fsClient.lat}?overview=full&geometries=geojson&steps=true`;
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
       const res = await fetch(url, { signal: controller.signal });
       clearTimeout(timeoutId);
       const data = await res.json();
       if (!data.routes || !data.routes[0]) throw new Error('Pas de trajet');
-      coords = data.routes[0].geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      const r = data.routes[0];
+      coords = r.geometry.coordinates.map(([lng, lat]) => [lat, lng]);
+      steps = (r.legs && r.legs[0] && r.legs[0].steps) || [];
+      if (r.duration > 0) fsAvgSpeed = Math.min(Math.max(r.distance / r.duration, 3), 20);
     } catch (e) {
       coords = [[courier.lat, courier.lng], [fsClient.lat, fsClient.lng]]; // repli : ligne droite
     }
     if (fsRouteLine) fsMap.removeLayer(fsRouteLine);
-    fsRouteLine = L.polyline(coords, { color: ROUTE_COLOR, weight: 6, opacity: 0.9 }).addTo(fsMap);
+    fsRouteLine = navRouteLayer(fsMap, coords, 8);
+    fsSteps = steps; fsStepIdx = Math.min(1, Math.max(steps.length - 1, 0));
+    if (fsLastCourier) fsUpdateBanner(fsLastCourier);
     fsFetchingRoute = false;
   }
 

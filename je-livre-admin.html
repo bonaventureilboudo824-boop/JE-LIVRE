@@ -1791,9 +1791,20 @@ if(db){ db.ref('presence').on('value', (snap) => { allPresence = snap.val() || {
       }
     });
 
-    auth.onAuthStateChanged((user) => {
-      if(user){ checkAdminAccess(user); }
-      else { currentAdminUser = null; showLogin(); }
+    // Sécurité : aucune session n'est conservée. Chaque ouverture de la page exige une
+    // connexion volontaire (clic sur « Se connecter »). Le remplissage automatique du
+    // navigateur est accepté, mais il ne valide jamais le formulaire à la place de l'utilisateur.
+    let persistCleared;
+    try {
+      persistCleared = auth.setPersistence(firebase.auth.Auth.Persistence.NONE)
+        .then(() => auth.signOut())
+        .catch(() => auth.signOut().catch(() => {}));
+    } catch(e){ persistCleared = Promise.resolve(); }
+    persistCleared.then(() => {
+      auth.onAuthStateChanged((user) => {
+        if(user){ checkAdminAccess(user); }
+        else { currentAdminUser = null; showLogin(); }
+      });
     });
   }
 
