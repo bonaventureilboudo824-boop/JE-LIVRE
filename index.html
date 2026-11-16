@@ -4720,7 +4720,7 @@
           return;
         }
         listenForDeliveryAssignment(requestId);
-        serverCallable(appAuth, 'notifyNearbyRequest')({ kind: 'delivery', requestId }).catch(() => {});
+        jlAskClientPush(); serverCallable(appAuth, 'notifyNearbyRequest')({ kind: 'delivery', requestId }).catch(() => {});
       }
     } catch (e) {
       console.warn('[Je Livre] Diffusion de la demande impossible :', e.message);
@@ -6635,6 +6635,7 @@
         clientPhone: phone,
         clientCoords: window.checkoutCoords,
         clientUid: currentUser.uid,
+        handover: true,
         paymentMethod,
         // Paiement en ligne : la commande reste "en attente de paiement", invisible
         // du vendeur, tant que le serveur n'a pas reçu la confirmation du prestataire.
@@ -6660,7 +6661,7 @@
         // de la boutique tant que ce n'est pas réglé, la prévenir maintenant
         // serait trompeur. Pour les autres modes, elle la voit tout de suite.
         if(o.status !== 'awaiting_payment'){
-          serverCallable(appAuth, 'notifyShopNewOrder')({ orderId: o.orderId }).catch(() => {});
+          jlAskClientPush(); serverCallable(appAuth, 'notifyShopNewOrder')({ orderId: o.orderId }).catch(() => {});
         }
       }
     } catch(e){
@@ -6903,10 +6904,11 @@
           <div class="order-item-card">
             <div class="top"><b>${escapeHtml(o.orderId)}</b>${statusChip}</div>${jlTicketLine(o.ticket)}
             <div class="meta" style="margin-top:6px">${itemsLabel} · ${formatFCFA(o.total)}</div>
-            ${actionHtml}
+            ${jlOrderCodeSlot(o)}${actionHtml}
           </div>
         `;
       }).join('');
+      jlFillOrderCodes(el, vendorAuth, 'shop', all);
     });
   }
 
@@ -7175,6 +7177,7 @@
       if (cashEl) cashEl.style.display = 'none';
       updateCourseContactButtons();
       jlSyncCourseCodeUi();
+      serverCallable(driverAuth, 'notifyAssigned')({ kind: 'delivery', requestId: id }).catch(() => {});
       go('course-active');
     });
   }
@@ -7310,7 +7313,7 @@
       const shop = (typeof shopsByKey !== 'undefined') ? shopsByKey[o.shopId] : null;
       const pickup = (shop && shop.lat != null && shop.lng != null) ? { lat: shop.lat, lng: shop.lng } : o.clientCoords;
       const dropoff = (shop && shop.lat != null && shop.lng != null) ? o.clientCoords : null;
-      window.currentCourse = { orderId, source: 'marketplaceOrders', clientCoords: pickup, dropoffCoords: dropoff, price: o.deliveryFee || 0, recipientPhone: o.clientPhone || '', paymentMethod: o.paymentMethod || 'pay_on_delivery' };
+      window.currentCourse = { orderId, source: 'marketplaceOrders', clientCoords: pickup, dropoffCoords: dropoff, price: o.deliveryFee || 0, recipientPhone: o.clientPhone || '', handover: o.handover === true, paymentMethod: o.paymentMethod || 'pay_on_delivery' };
       courseStep = 0;
       const nameEl = document.getElementById('courseClientName');
       const metaEl = document.getElementById('courseClientMeta');
@@ -7329,6 +7332,7 @@
       }
       updateCourseContactButtons();
       jlSyncCourseCodeUi();
+      serverCallable(driverAuth, 'notifyAssigned')({ kind: 'order', requestId: orderId }).catch(() => {});
       go('course-active');
     });
   }
@@ -8007,6 +8011,35 @@
     awaiting_payment: 'Paiement en attente',
   };
 
+  // Codes de remise des commandes boutique : la boutique reçoit le code de récupération (à donner au livreur),
+  // le client reçoit le code de remise (à donner au livreur en main propre). Le serveur ne les donne qu'à eux.
+  window.jlOrderCodes = {};
+  // Le client est prévenu (livreur accepté, colis récupéré/livré, paiement à régler) : on lui demande l'autorisation au moment utile.
+  window.jlAskClientPush = function(){ try { if(window.currentAppUser) initPushNotifications('client', window.currentAppUser.uid, null, { prompt: true }); } catch(e){} };
+  function jlOrderCodeSlot(o){
+    if(!o || o.handover !== true || (o.status !== 'pending_seller' && o.status !== 'pending_delivery' && o.status !== 'assigned')) return '';
+    return `<div class="jl-order-code" data-oid="${escapeHtml(o.orderId)}" style="display:none;margin-top:10px;background:#FFF3D2;border:1px solid #FFE39A;border-radius:var(--radius-md);padding:10px 14px"></div>`;
+  }
+  function jlFillOrderCodes(rootEl, auth, role, orders){
+    if(!rootEl || !auth) return;
+    rootEl.querySelectorAll('.jl-order-code').forEach((slot) => {
+      const id = slot.dataset.oid; const o = orders[id]; if(!o) return;
+      const paint = (c) => {
+        const code = role === 'shop' ? c.pickup : c.delivery;
+        if(!code) return;
+        slot.style.display = 'block';
+        const picked = !!o.pickedUpAt;
+        if(role === 'shop'){
+          slot.innerHTML = '<div style="font-size:12.5px;color:var(--text-soft)">Code à donner au livreur quand il prend la commande</div>' + (picked ? '<b>✓ Commande récupérée</b>' : '<div style="font-family:\'Barlow Condensed\',sans-serif;font-weight:800;font-size:34px;letter-spacing:.18em">' + code + '</div>');
+        } else {
+          slot.innerHTML = '<div style="font-size:12.5px;color:var(--text-soft)">Code à donner au livreur à la remise de votre commande (uniquement en main propre)</div><div style="font-family:\'Barlow Condensed\',sans-serif;font-weight:800;font-size:34px;letter-spacing:.18em">' + code + '</div>';
+        }
+      };
+      if(window.jlOrderCodes[id]){ paint(window.jlOrderCodes[id]); return; }
+      serverCallable(auth, 'handoverCodes')({ orderId: id }).then((res) => { const c = res && res.data; if(c){ window.jlOrderCodes[id] = c; paint(c); } }).catch(() => {});
+    });
+  }
+
   function renderMyOrders(){
     const el = document.getElementById('myOrdersList');
     if(!el || typeof firebase === 'undefined' || !firebase.auth().currentUser) return;
@@ -8052,10 +8085,11 @@
             ${needsPayment
               ? `<div class="meta" style="margin-top:2px;color:#B3261E;font-weight:700">Reste à régler : ${formatFCFA(o.total)}</div>`
               : `<div class="meta" style="margin-top:2px;font-weight:700">${payTag}</div>`}
-            ${actionHtml}
+            ${jlOrderCodeSlot(o)}${actionHtml}
           </div>
         `;
       }).join('');
+      jlFillOrderCodes(el, appAuth, 'client', window.myOrdersCache);
     }).catch(() => { el.innerHTML = '<p class="section-sub">Chargement indisponible pour le moment.</p>'; });
   }
 
@@ -8201,7 +8235,7 @@
         }).then(maybeAutoPayCommission);
         renderCommissionBanner();
       }
-    } else if(c.orderId){
+    } else if(c.orderId && !c.handover){
       // Pour une commande marketplace, le livreur remet le colis mais ne
       // clôture pas lui-même la vente : c'est au client de confirmer la
       // réception (et, s'il paie à la livraison, son paiement en même
@@ -8266,10 +8300,10 @@
     const box = document.getElementById('courseCodeBox');
     const btn = document.getElementById('courseBtn');
     if(!box || !btn) return;
-    if(c && c.source === 'deliveryRequests' && c.handover){
+    if(c && c.handover && (c.source === 'deliveryRequests' || c.source === 'marketplaceOrders')){
       box.style.display = 'block';
       document.getElementById('courseCode').value = '';
-      document.getElementById('courseCodeLabel').textContent = courseStep === 0 ? "Code donné par l'expéditeur (à la prise du colis)" : 'Code donné par le destinataire (à la remise)';
+      document.getElementById('courseCodeLabel').textContent = c.source === 'marketplaceOrders' ? (courseStep === 0 ? 'Code donné par la boutique (à la prise de la commande)' : 'Code donné par le client (à la remise)') : courseStep === 0 ? "Code donné par l'expéditeur (à la prise du colis)" : 'Code donné par le destinataire (à la remise)';
       btn.textContent = courseStep === 0 ? 'Valider la récupération' : 'Valider la livraison';
     } else {
       box.style.display = 'none';
@@ -8314,8 +8348,8 @@
       if(r.status !== 'assigned'){ loadDriverCourses(); return; }
       const shop = (typeof shopsByKey !== 'undefined') ? shopsByKey[r.shopId] : null;
       const hasShop = shop && shop.lat != null && shop.lng != null;
-      window.currentCourse = { orderId: id, source: 'marketplaceOrders', clientCoords: hasShop ? { lat: shop.lat, lng: shop.lng } : r.clientCoords, dropoffCoords: hasShop ? r.clientCoords : null, price: r.deliveryFee || 0, recipientPhone: r.clientPhone || '', paymentMethod: r.paymentMethod || 'pay_on_delivery' };
-      courseStep = jlLoadCourseStep(id);
+      window.currentCourse = { orderId: id, source: 'marketplaceOrders', clientCoords: hasShop ? { lat: shop.lat, lng: shop.lng } : r.clientCoords, dropoffCoords: hasShop ? r.clientCoords : null, price: r.deliveryFee || 0, recipientPhone: r.clientPhone || '', handover: r.handover === true, paymentMethod: r.paymentMethod || 'pay_on_delivery' };
+      courseStep = (r.pickedUpAt || jlLoadCourseStep(id) === 1) ? 1 : 0;
       if(nameEl) nameEl.textContent = 'Client · ' + (r.clientPhone || '');
       if(metaEl) metaEl.textContent = (r.items || []).map((it) => it.qty + '×' + it.name).join(', ') + ' · ' + (r.shopName || '');
       if(cashEl){
@@ -8371,14 +8405,14 @@
     const step = courseStep === 0 ? 'pickup' : 'delivery';
     btn.disabled = true;
     try {
-      const res = await serverCallable(driverAuth, 'confirmHandover')({ requestId: c.requestId, step, code });
+      const res = await serverCallable(driverAuth, 'confirmHandover')(c.orderId ? { orderId: c.orderId, step, code } : { requestId: c.requestId, step, code });
       const out = (res && res.data) || {};
       if(step === 'pickup' && !out.completed){
         courseStep = 1;
         jlSaveCourseStep(1);
         updateCourseContactButtons();
         jlSyncCourseCodeUi();
-        if(c.dropoffCoords) renderCourseMap(); else finishCourseStep();
+        if(c.dropoffCoords || c.orderId) renderCourseMap(); else finishCourseStep();
       } else {
         finishCourseStep();
       }
@@ -8388,7 +8422,7 @@
   }
   function advanceCourse(){
     const cc = window.currentCourse;
-    if(cc && cc.source === 'deliveryRequests' && cc.handover){ advanceCourseWithCode(); return; }
+    if(cc && cc.handover && (cc.source === 'deliveryRequests' || cc.source === 'marketplaceOrders')){ advanceCourseWithCode(); return; }
     const btn = document.getElementById('courseBtn');
     if(courseStep === 0){
       courseStep = 1;
