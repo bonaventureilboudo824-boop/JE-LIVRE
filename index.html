@@ -235,6 +235,7 @@
     margin-top:14px; background:var(--card); border:1px solid var(--border); border-radius:var(--radius-md); padding:15px;
   }
   .order-card .top{ display:flex; align-items:center; justify-content:space-between; }
+  .jl-ticket{ display:inline-flex; align-items:center; gap:5px; margin-top:4px; font-size:11px; font-weight:700; letter-spacing:.3px; color:var(--text-soft,#6E6C66); background:#F1EFE9; border-radius:6px; padding:3px 7px; cursor:pointer; user-select:all; }
   .order-card .id{ font-family:'Barlow Condensed',sans-serif; font-weight:800; font-size:15px; }
   .status-chip{ font-size:11px; font-weight:700; padding:4px 9px; border-radius:999px; }
   .status-chip.route{ background:#FFF3D2; color:#8A6A00; }
@@ -4470,9 +4471,10 @@
     }
     const trackId = 'JL-' + (10000 + Math.floor(Math.random() * 89999));
     const requestId = 'dr_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const ticket = await jlClaimTicket('LIV', 'delivery', requestId);
 
     window.currentDelivery = {
-      requestId, trackId, price,
+      requestId, trackId, ticket, price,
       distanceKm: priceDistanceKm,
       clientCoords: senderPoint,
       dropoffCoords: recipientPoint,
@@ -4492,7 +4494,7 @@
       if (priceEl) priceEl.textContent = price.toLocaleString('fr-FR') + ' FCFA';
     }
     const trackEl = document.getElementById('deliveryTrackId');
-    if (trackEl) trackEl.textContent = trackId;
+    if (trackEl) trackEl.textContent = ticket || trackId;
     const msgEl = document.getElementById('successMessage');
     if (msgEl) msgEl.textContent = "Recherche d'un livreur disponible à proximité…";
 
@@ -4509,7 +4511,7 @@
     try {
       if (typeof firebase !== 'undefined') {
         await firebase.database().ref('deliveryRequests/' + requestId).set({
-          trackId, price, distanceKm: priceDistanceKm, type,
+          trackId, ticket, price, distanceKm: priceDistanceKm, type,
           packageCount: isGroupee ? packageCount : null,
           description: isExpress ? (getVal('expDescInput') || null) : null,
           senderCoords: senderPoint,
@@ -6373,6 +6375,35 @@
   // Identifiant de commande UNIQUE. L'ancien tirage (4800 + hasard sur 4999 valeurs)
   // donnait deux fois le même numéro dès quelques dizaines de commandes, et la
   // seconde effaçait silencieusement la première (c'est la clé de la commande en base).
+  // ---- Tickets de litige : un numéro unique par livraison / commande ----
+  // Format PREFIXE-AAMMJJ-XXXXXX. L'unicité est garantie par la base : le ticket est
+  // réservé dans tickets/<ticket> (création seulement, jamais écrasable), on retente si pris.
+  async function jlClaimTicket(prefix, kind, id){
+    const uid = firebase.auth().currentUser && firebase.auth().currentUser.uid;
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const d = new Date();
+    const ymd = String(d.getUTCFullYear()).slice(2) + String(d.getUTCMonth() + 1).padStart(2, '0') + String(d.getUTCDate()).padStart(2, '0');
+    for(let i = 0; i < 6; i++){
+      let c = ''; const buf = new Uint32Array(6);
+      (window.crypto || window.msCrypto).getRandomValues(buf);
+      for(let k = 0; k < 6; k++) c += chars[buf[k] % chars.length];
+      const ticket = prefix + '-' + ymd + '-' + c;
+      try {
+        await firebase.database().ref('tickets/' + ticket).set({ kind, id, uid, at: firebase.database.ServerValue.TIMESTAMP });
+        return ticket;
+      } catch(e){ /* déjà pris ou réseau : on retente */ }
+    }
+    return null; // on ne bloque jamais une commande pour un ticket ; l'admin retrouve toujours l'identifiant interne
+  }
+  function jlTicketLine(t){
+    if(!t) return '';
+    const s = escapeHtml(String(t));
+    return `<div class="jl-ticket" onclick="event.stopPropagation(); jlCopyTicket('${s}')" title="Copier le ticket">Ticket ${s}</div>`;
+  }
+  function jlCopyTicket(t){
+    try { navigator.clipboard.writeText(t); } catch(e){ /* ignoré */ }
+  }
+  window.jlCopyTicket = jlCopyTicket;
   function newOrderId(){
     return 'CMD-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).slice(2, 5).padEnd(3, '0').toUpperCase();
   }
@@ -6433,6 +6464,7 @@
       });
     }
     if(orders.length === 0){ alert('Votre panier est vide.'); return; }
+    for(const o of orders){ o.ticket = await jlClaimTicket('CMD', 'order', o.orderId); }
 
     // ...puis on les enregistre. Avant, une erreur d'enregistrement était simplement
     // ignorée : le client voyait "Commande confirmée" alors que rien n'était envoyé.
@@ -6471,7 +6503,7 @@
       if(!started) goReset('marketplace', ['my-orders']);
       return;
     }
-    document.getElementById('orderIdLabel').textContent = savedIds.join(', ');
+    document.getElementById('orderIdLabel').textContent = orders.filter((o) => savedIds.includes(o.orderId)).map((o) => o.ticket || o.orderId).join(', ');
     goReset('marketplace', ['order-success']);
   }
   window.confirmMarketplaceOrder = confirmMarketplaceOrder;
@@ -6671,7 +6703,7 @@
         }
         return `
           <div class="order-item-card">
-            <div class="top"><b>${escapeHtml(o.orderId)}</b>${statusChip}</div>
+            <div class="top"><b>${escapeHtml(o.orderId)}</b>${statusChip}</div>${jlTicketLine(o.ticket)}
             <div class="meta" style="margin-top:6px">${itemsLabel} · ${formatFCFA(o.total)}</div>
             ${actionHtml}
           </div>
@@ -6879,7 +6911,7 @@
     if (nearby.length === 0) { el.innerHTML = '<p class="section-sub">Aucune demande à proximité pour le moment.</p>'; return; }
     el.innerHTML = nearby.map(({ id, r, dToSender }) => `
       <div class="req-card">
-        <div class="top"><i data-feather="package" style="width:16px;height:16px;color:var(--text-soft)"></i><b>${escapeHtml(r.trackId)}</b><span>${formatFCFA(r.price)}</span></div>
+        <div class="top"><i data-feather="package" style="width:16px;height:16px;color:var(--text-soft)"></i><b>${escapeHtml(r.trackId)}</b><span>${formatFCFA(r.price)}</span></div>${jlTicketLine(r.ticket)}
         <div class="meta">${dToSender.toFixed(1)} km de vous · ${describeDeliveryType(r)}</div>
         <div class="req-row">
           <button class="btn btn-outline" onclick="event.stopPropagation(); dismissRequest('${id}')">Refuser</button>
@@ -6939,7 +6971,7 @@
       const metaEl = document.getElementById('courseClientMeta');
       const btn = document.getElementById('courseBtn');
       const cashEl = document.getElementById('courseCashNotice');
-      if (nameEl) nameEl.textContent = r.trackId;
+      if (nameEl) nameEl.textContent = r.trackId + (r.ticket ? ' · ' + r.ticket : '');
       if (metaEl) metaEl.textContent = describeDeliveryType(r);
       if (btn) btn.textContent = 'Marquer comme récupéré';
       if (cashEl) cashEl.style.display = 'none';
@@ -6981,7 +7013,7 @@
         : `<div class="meta" style="color:#3EAF4C;font-weight:700">Déjà payée en ligne — rien à encaisser</div>`;
       return `
       <div class="req-card">
-        <div class="top"><i data-feather="shopping-bag" style="width:16px;height:16px;color:var(--text-soft)"></i><b>${escapeHtml(o.orderId)}</b><span>${formatFCFA(o.deliveryFee)}</span></div>
+        <div class="top"><i data-feather="shopping-bag" style="width:16px;height:16px;color:var(--text-soft)"></i><b>${escapeHtml(o.orderId)}</b><span>${formatFCFA(o.deliveryFee)}</span></div>${jlTicketLine(o.ticket)}
         <div class="meta">${(o.distanceKm || 0).toFixed(1)} km · ${escapeHtml(o.shopName || 'Boutique')} → client (${escapeHtml(o.clientPhone || '')})</div>
         ${cashNote}
         <div class="req-row">
@@ -7689,7 +7721,7 @@
           // laisse le client réessayer ici plutôt que de la perdre.
           return `
             <div class="order-card">
-              <div class="top"><span class="id">${escapeHtml(r.trackId)}</span><span class="status-chip" style="background:#FBEAEA;color:#B3261E">Paiement en attente</span></div>
+              <div class="top"><span class="id">${escapeHtml(r.trackId)}</span><span class="status-chip" style="background:#FBEAEA;color:#B3261E">Paiement en attente</span></div>${jlTicketLine(r.ticket)}
               <div class="route-line"><span>${escapeHtml(r.senderAddress || 'Expéditeur')}</span><div class="dash"></div><span>${escapeHtml(r.recipientAddress || 'Destinataire')}</span></div>
               <div class="eta">
                 <span>${formatFCFA(r.price)}</span>
@@ -7702,7 +7734,7 @@
         }
         return `
         <div class="order-card">
-          <div class="top"><span class="id">${escapeHtml(r.trackId)}</span><span class="status-chip route">${r.status === 'assigned' ? 'En route' : 'Recherche livreur'}</span></div>
+          <div class="top"><span class="id">${escapeHtml(r.trackId)}</span><span class="status-chip route">${r.status === 'assigned' ? 'En route' : 'Recherche livreur'}</span></div>${jlTicketLine(r.ticket)}
           <div class="route-line"><span>${escapeHtml(r.senderAddress || 'Expéditeur')}</span><div class="dash"></div><span>${escapeHtml(r.recipientAddress || 'Destinataire')}</span></div>
           <div class="eta">
             <span>${(r.type === 'express' || r.type === 'groupee') ? 'Selon la grille tarifaire' : formatFCFA(r.price)}</span>
@@ -7715,7 +7747,7 @@
       histEl.innerHTML = done.length === 0 ? '<p class="section-sub">Aucune livraison terminée pour le moment.</p>' : done.map(([, r]) => `
         <div class="hist-row">
           <div class="hist-check"><i data-feather="check"></i></div>
-          <div><b>${escapeHtml(r.trackId)}</b><span>Livraison terminée</span></div>
+          <div><b>${escapeHtml(r.trackId)}</b><span>Livraison terminée</span>${jlTicketLine(r.ticket)}</div>
           <div class="hist-price">${(r.type === 'express' || r.type === 'groupee') ? '—' : formatFCFA(r.price)}</div>
         </div>
       `).join('');
@@ -7775,7 +7807,7 @@
           : `<span class="status-chip route">${ORDER_STATUS_LABELS[o.status] || o.status}</span>`;
         return `
           <div class="order-item-card" style="margin-bottom:12px">
-            <div class="top"><b>${escapeHtml(o.orderId)}</b>${statusChip}</div>
+            <div class="top"><b>${escapeHtml(o.orderId)}</b>${statusChip}</div>${jlTicketLine(o.ticket)}
             <div class="meta" style="margin-top:6px">${itemsLabel}</div>
             <div class="meta" style="margin-top:2px">${escapeHtml(o.shopName || '')} · ${formatFCFA(o.total)}</div>
             ${needsPayment
