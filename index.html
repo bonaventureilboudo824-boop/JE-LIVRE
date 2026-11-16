@@ -1357,6 +1357,18 @@
       <div class="screen" id="screen-suivi" data-title="Suivi de livraison">
         <div id="suiviMapReal" style="height:210px;border-radius:var(--radius-lg);overflow:hidden;margin-top:0;border:1px solid var(--border)"></div>
         <div class="eta-banner"><b>Le livreur est en route</b><span id="suiviEta">12 min</span></div>
+        <div id="suiviCodes" style="display:none;margin-top:12px;background:var(--card,#fff);border:1px solid var(--border);border-radius:var(--radius-lg);padding:14px 16px">
+          <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:15px;letter-spacing:.03em;text-transform:uppercase">Codes de remise</div>
+          <div id="codePickupRow" style="margin-top:10px">
+            <div style="font-size:12.5px;color:var(--text-soft)">① À donner au livreur quand il prend le colis</div>
+            <div id="codePickupVal" style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:38px;letter-spacing:.18em">····</div>
+          </div>
+          <div id="codeDeliveryRow" style="margin-top:8px">
+            <div style="font-size:12.5px;color:var(--text-soft)">② À donner au destinataire : il le dira au livreur à la remise</div>
+            <div id="codeDeliveryVal" style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:38px;letter-spacing:.18em">····</div>
+            <button class="btn btn-outline" id="codeShareBtn" style="margin-top:6px;padding:8px" onclick="jlShareDeliveryCode()">Envoyer le code au destinataire</button>
+          </div>
+        </div>
         <div id="suiviPaid" style="display:none;margin-top:10px;background:#E3F5E6;color:#1B7A2B;border-radius:var(--radius-md);padding:10px 14px;font-weight:700;font-size:13.5px"></div>
         <div class="courier-card">
           <div class="courier-avatar"><i data-feather="user"></i></div>
@@ -1825,6 +1837,10 @@
         <div class="call-row">
           <a class="btn btn-black" id="courseCallBtn" href="#" style="text-decoration:none"><i data-feather="phone" style="width:15px;height:15px"></i>Appeler</a>
           <a class="btn btn-outline" id="courseMsgBtn" href="#" target="_blank" rel="noopener" style="text-decoration:none"><i data-feather="message-circle" style="width:15px;height:15px"></i>Message</a>
+        </div>
+        <div id="courseCodeBox" style="display:none;margin-top:16px">
+          <label id="courseCodeLabel" for="courseCode" style="display:block;font-size:13px;color:var(--text-soft);margin-bottom:6px">Code donné par l'expéditeur</label>
+          <input id="courseCode" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" placeholder="0000" style="width:100%;text-align:center;font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:40px;letter-spacing:.3em;padding:10px;border-radius:var(--radius-md);border:2px solid var(--border);background:var(--card,#fff);color:var(--text)">
         </div>
         <button class="btn btn-yellow" style="margin-top:18px" id="courseBtn" onclick="advanceCourse()">Marquer comme récupéré</button>
       </div>
@@ -4688,6 +4704,7 @@
           paymentMethod,
           paymentStatus: paymentMethod === 'online' ? 'pending' : null,
           assignedDriverId: null,
+          handover: true, // récupération et remise validées par des codes (voir confirmHandover côté serveur)
           clientUid: firebase.auth().currentUser ? firebase.auth().currentUser.uid : null,
           referredBy: window.currentAppUser ? (window.currentAppUser.referredBy || null) : null,
           referredAt: window.currentAppUser ? (window.currentAppUser.referredAt || null) : null,
@@ -7148,7 +7165,7 @@
         return;
       }
       const r = result.snapshot.val();
-      window.currentCourse = { requestId: id, trackId: r.trackId, clientCoords: r.senderCoords, dropoffCoords: r.recipientCoords || null, source: 'deliveryRequests', price: r.price || 0, senderPhone: r.senderPhone || '', recipientPhone: r.recipientPhone || '', referredBy: r.referredBy || null, referredAt: r.referredAt || null, deliveryType: r.type || 'simple', packageCount: r.packageCount || 1, paymentMethod: r.paymentMethod || 'cash' };
+      window.currentCourse = { requestId: id, trackId: r.trackId, clientCoords: r.senderCoords, dropoffCoords: r.recipientCoords || null, source: 'deliveryRequests', handover: r.handover === true, price: r.price || 0, senderPhone: r.senderPhone || '', recipientPhone: r.recipientPhone || '', referredBy: r.referredBy || null, referredAt: r.referredAt || null, deliveryType: r.type || 'simple', packageCount: r.packageCount || 1, paymentMethod: r.paymentMethod || 'cash' };
       courseStep = 0;
       const nameEl = document.getElementById('courseClientName');
       const metaEl = document.getElementById('courseClientMeta');
@@ -7159,10 +7176,44 @@
       if (btn) btn.textContent = 'Marquer comme récupéré';
       if (cashEl) cashEl.style.display = 'none';
       updateCourseContactButtons();
+      jlSyncCourseCodeUi();
       go('course-active');
     });
   }
   window.acceptDeliveryRequest = acceptDeliveryRequest;
+
+  // ---- Codes de remise (récupération / livraison) : affichés à celui qui a fait la demande ----
+  window.jlHandoverCodes = {};
+  window.jlCurrentHandover = null;
+  function jlRenderHandoverBox(requestId, data){
+    const box = document.getElementById('suiviCodes');
+    if(!box) return;
+    if(!data || data.handover !== true || data.status === 'completed' || data.status === 'awaiting_payment' || data.status === 'cancelled'){ box.style.display = 'none'; return; }
+    const paint = (c) => {
+      box.style.display = 'block';
+      const picked = !!data.pickedUpAt;
+      document.getElementById('codePickupVal').textContent = picked ? '✓ Colis récupéré' : c.pickup;
+      document.getElementById('codePickupVal').style.fontSize = picked ? '20px' : '38px';
+      document.getElementById('codePickupVal').style.letterSpacing = picked ? '0' : '.18em';
+      const hasRecipient = !!data.recipientCoords;
+      document.getElementById('codeDeliveryRow').style.display = hasRecipient ? 'block' : 'none';
+      document.getElementById('codeDeliveryVal').textContent = c.delivery;
+      window.jlCurrentHandover = { requestId, delivery: c.delivery, recipientPhone: data.recipientPhone || '', trackId: data.trackId || '' };
+    };
+    if(window.jlHandoverCodes[requestId]){ paint(window.jlHandoverCodes[requestId]); return; }
+    serverCallable(appAuth, 'handoverCodes')({ requestId }).then((res) => {
+      const c = res && res.data;
+      if(c && c.pickup){ window.jlHandoverCodes[requestId] = c; paint(c); }
+    }).catch(() => { /* ignoré : la boîte reste cachée, la livraison n'est pas bloquée */ });
+  }
+  function jlShareDeliveryCode(){
+    const h = window.jlCurrentHandover; if(!h) return;
+    const msg = 'Bonjour, votre colis Je Livre' + (h.trackId ? ' (' + h.trackId + ')' : '') + ' arrive. Quand le livreur vous le remet, donnez-lui ce code : ' + h.delivery + '. Ne le donnez qu\'à la remise du colis.';
+    const digits = String(h.recipientPhone || '').replace(/[^0-9]/g, '');
+    const url = (digits ? 'https://wa.me/' + digits : 'https://wa.me/') + '?text=' + encodeURIComponent(msg);
+    window.open(url, '_blank');
+  }
+  window.jlShareDeliveryCode = jlShareDeliveryCode;
 
   let deliveryAssignRef = null;
   function listenForDeliveryAssignment(requestId){
@@ -7171,6 +7222,7 @@
     deliveryAssignRef = firebase.database().ref('deliveryRequests/' + requestId);
     deliveryAssignRef.on('value', (snap) => {
       const data = snap.val();
+      jlRenderHandoverBox(requestId, data);
       const paidEl = document.getElementById('suiviPaid');
       if (paidEl && data) {
         if (data.paymentStatus === 'paid' && data.paymentMethod !== 'cash') { paidEl.style.display = 'block'; paidEl.textContent = 'Paiement confirmé ✓' + (data.ticket ? ' · ' + data.ticket : ''); }
@@ -7278,6 +7330,7 @@
         }
       }
       updateCourseContactButtons();
+      jlSyncCourseCodeUi();
       go('course-active');
     });
   }
@@ -8108,8 +8161,9 @@
     c.settled = true;
     if(c.source === 'deliveryRequests'){
       // On attend que la fin de livraison soit bien enregistrée avant de demander le crédit au serveur.
-      driverDb.ref('deliveryRequests/' + c.requestId).update({ status: 'completed', completedAt: firebase.database.ServerValue.TIMESTAMP })
-        .then(() => { if(c.referredBy) requestReferralCredit(driverAuth, 'deliveryRequests', c.requestId); });
+      // Livraison à codes : c'est le serveur qui l'a terminée (bon code saisi), le livreur ne peut plus le faire lui-même.
+      const markDone = c.handover ? Promise.resolve() : driverDb.ref('deliveryRequests/' + c.requestId).update({ status: 'completed', completedAt: firebase.database.ServerValue.TIMESTAMP });
+      markDone.then(() => { if(c.referredBy) requestReferralCredit(driverAuth, 'deliveryRequests', c.requestId); });
       const isSimple = c.deliveryType !== 'express' && c.deliveryType !== 'groupee';
       if(isSimple){
         recordPlatformCommission('commissionSimple', (c.price || 0) * 0.10);
@@ -8207,7 +8261,46 @@
     }
   }
 
+  // Livraison à codes : le bouton demande le code (expéditeur à la récupération, destinataire à la remise).
+  function jlSyncCourseCodeUi(){
+    const c = window.currentCourse;
+    const box = document.getElementById('courseCodeBox');
+    const btn = document.getElementById('courseBtn');
+    if(!box || !btn) return;
+    if(c && c.source === 'deliveryRequests' && c.handover){
+      box.style.display = 'block';
+      document.getElementById('courseCode').value = '';
+      document.getElementById('courseCodeLabel').textContent = courseStep === 0 ? "Code donné par l'expéditeur (à la prise du colis)" : 'Code donné par le destinataire (à la remise)';
+      btn.textContent = courseStep === 0 ? 'Valider la récupération' : 'Valider la livraison';
+    } else {
+      box.style.display = 'none';
+    }
+  }
+  async function advanceCourseWithCode(){
+    const c = window.currentCourse;
+    const btn = document.getElementById('courseBtn');
+    const code = (document.getElementById('courseCode').value || '').trim();
+    if(!/^[0-9]{4}$/.test(code)){ alert('Entrez le code à 4 chiffres.'); return; }
+    const step = courseStep === 0 ? 'pickup' : 'delivery';
+    btn.disabled = true;
+    try {
+      const res = await serverCallable(driverAuth, 'confirmHandover')({ requestId: c.requestId, step, code });
+      const out = (res && res.data) || {};
+      if(step === 'pickup' && !out.completed){
+        courseStep = 1;
+        updateCourseContactButtons();
+        jlSyncCourseCodeUi();
+        if(c.dropoffCoords) renderCourseMap(); else finishCourseStep();
+      } else {
+        finishCourseStep();
+      }
+    } catch(e){
+      alert((e && e.message) || 'Code refusé. Réessayez.');
+    } finally { btn.disabled = false; }
+  }
   function advanceCourse(){
+    const cc = window.currentCourse;
+    if(cc && cc.source === 'deliveryRequests' && cc.handover){ advanceCourseWithCode(); return; }
     const btn = document.getElementById('courseBtn');
     if(courseStep === 0){
       courseStep = 1;
