@@ -2752,12 +2752,14 @@
   // du paiement et on nettoie l'adresse ; le résultat n'est affiché qu'une fois
   // connecté (voir plus bas) et surtout, jamais cru sur la seule adresse de retour.
   window.pendingPaymentReturnTx = null;
+  window.pendingPaymentReturnKind = null;
   (function readPaymentReturn(){
     try {
       const q = new URLSearchParams(window.location.search);
       if(q.get('payment') === 'return' && q.get('tx')){
         window.pendingPaymentReturnTx = q.get('tx');
-        q.delete('payment'); q.delete('tx');
+        window.pendingPaymentReturnKind = q.get('k');
+        q.delete('payment'); q.delete('tx'); q.delete('k');
         const rest = q.toString();
         history.replaceState(null, '', window.location.pathname + (rest ? '?' + rest : ''));
       }
@@ -2854,6 +2856,8 @@
       // échoue et ne réessaie jamais toute seule ensuite.
       ensurePublicCatalog();
       renderAppNotifications();
+      // Rattrape un paiement fait mais jamais confirmé (retour raté, connexion coupée…).
+      if(!window.pendingPaymentReturnTx){ try { serverCallable(appAuth, 'confirmPayment')({}).catch(() => {}); } catch(e){ /* ignoré */ } }
       if(window.pendingPaymentReturnTx && !isTopupReturn()){
         const tx = window.pendingPaymentReturnTx;
         window.pendingPaymentReturnTx = null;
@@ -3987,6 +3991,7 @@
   // on ne croit jamais l'adresse de retour seule.
   function isTopupReturn(){
     try {
+      if(window.pendingPaymentReturnTx && window.pendingPaymentReturnKind === 'commission') return true;
       return !!window.pendingPaymentReturnTx
         && sessionStorage.getItem('je_livre_pending_tx_kind') === 'commissionTopup'
         && sessionStorage.getItem('je_livre_pending_tx') === window.pendingPaymentReturnTx;
@@ -3998,16 +4003,23 @@
     const ref = driverDb.ref('payments/' + txId);
     let done = false, timer = null;
     const after = () => { try { go('dashboard-livreur'); } catch(e){ /* ignoré */ } };
-    function finish(title, msg){
+    let autoTimer = null, pollTimer = null;
+    function finish(title, msg, autoGo){
       if(done) return; done = true;
-      clearTimeout(timer); ref.off('value', onValue);
+      clearTimeout(timer); clearInterval(pollTimer); ref.off('value', onValue);
       payOverlayAfterClose = after;
       showPayOverlay(title, msg, true);
+      // Paiement confirmé : on ramène le client tout seul sur son tableau de bord.
+      if(autoGo) autoTimer = setTimeout(() => { if(document.getElementById('payOverlay').classList.contains('show')) closePayOverlay(); }, 2500);
     }
+    // Ne pas attendre le webhook : on demande au serveur de vérifier le paiement chez HorusPay,
+    // tout de suite puis toutes les 3 secondes tant que ce n'est pas réglé.
+    const askServer = () => { serverCallable(driverAuth, 'confirmPayment')({ txId }).catch(() => {}); };
+    askServer(); pollTimer = setInterval(askServer, 3000);
     function onValue(snap){
       const p = snap.val();
       if(!p) return;
-      if(p.status === 'paid') finish(p.thenPayCommission ? 'Commission payée' : 'Recharge confirmée', (p.thenPayCommission && p.paidCommission > 0) ? 'Votre commission de ' + formatFCFA(p.paidCommission) + ' est payée. Vous pouvez continuer à accepter des livraisons.' : formatFCFA(p.amount) + ' ont été ajoutés à votre solde de commission.');
+      if(p.status === 'paid') finish(p.thenPayCommission ? 'Commission payée' : 'Recharge confirmée', (p.thenPayCommission && p.paidCommission > 0) ? 'Votre commission de ' + formatFCFA(p.paidCommission) + ' est payée. Vous pouvez continuer à accepter des livraisons.' : formatFCFA(p.amount) + ' ont été ajoutés à votre solde de commission.', true);
       else if(p.status === 'amount_mismatch') finish('Paiement à vérifier', 'Le montant reçu ne correspond pas à votre recharge. Le service client va la vérifier.');
       else if(p.status === 'failed' || p.status === 'failed_to_create') finish('Paiement non abouti', 'Le paiement n\'a pas abouti. Vous pouvez réessayer.');
     }
@@ -6744,8 +6756,12 @@
   // résultat (le prestataire le lui envoie en parallèle), puis on l'affiche.
   function handlePaymentReturn(txId){
     if(!txId || typeof firebase === 'undefined') return;
-    let kind = 'marketplace';
-    try { kind = sessionStorage.getItem('je_livre_pending_tx_kind') || 'marketplace'; } catch(e){ /* ignoré */ }
+    // Le type vient de l'adresse de retour (fiable même si la page a été rechargée sur un autre
+    // domaine, ce qui efface sessionStorage) ; sessionStorage ne sert plus que de repli.
+    let kind = window.pendingPaymentReturnKind || '';
+    if(!kind){ try { kind = sessionStorage.getItem('je_livre_pending_tx_kind') || ''; } catch(e){ /* ignoré */ } }
+    if(kind !== 'delivery' && kind !== 'marketplace') kind = 'marketplace';
+    window.pendingPaymentReturnKind = null;
     const isDelivery = kind === 'delivery';
     showPayOverlay('Vérification du paiement…', 'Nous attendons la confirmation de votre paiement.', false);
     const ref = firebase.database().ref('payments/' + txId);
@@ -6758,22 +6774,33 @@
         const saved = sessionStorage.getItem('je_livre_pending_delivery');
         if(saved) window.currentDelivery = JSON.parse(saved);
       } catch(e){ /* ignoré */ }
+      if(!(window.currentDelivery && window.currentDelivery.requestId) && window.lastPaidRequestId){
+        window.currentDelivery = Object.assign({}, window.currentDelivery || {}, { requestId: window.lastPaidRequestId });
+      }
       if(window.currentDelivery && window.currentDelivery.requestId) listenForDeliveryAssignment(window.currentDelivery.requestId);
       switchTab('livraison'); go('suivi');
     };
     const after = isDelivery ? toDeliveryTracking : toOrders;
     const retryHint = isDelivery ? 'Vous pouvez réessayer depuis « Mes livraisons ».' : 'Vous pouvez réessayer depuis « Mes commandes ».';
-    function finish(title, msg){
+    let autoTimer = null, pollTimer = null;
+    function finish(title, msg, autoGo){
       if(done) return; done = true;
-      clearTimeout(timer); ref.off('value', onValue);
+      clearTimeout(timer); clearInterval(pollTimer); ref.off('value', onValue);
       payOverlayAfterClose = after;
       showPayOverlay(title, msg, true);
+      // Paiement confirmé : on ramène le client tout seul là où il en était.
+      if(autoGo) autoTimer = setTimeout(() => { if(document.getElementById('payOverlay').classList.contains('show')) closePayOverlay(); }, 2500);
     }
+    // Ne pas attendre le webhook : on demande au serveur de vérifier le paiement chez HorusPay,
+    // tout de suite puis toutes les 3 secondes tant que ce n'est pas réglé.
+    const askServer = () => { serverCallable(appAuth, 'confirmPayment')({ txId }).catch(() => {}); };
+    askServer(); pollTimer = setInterval(askServer, 3000);
     function onValue(snap){
       const p = snap.val();
       if(!p) return;
       if(p.status === 'paid'){
-        finish('Paiement confirmé', isDelivery ? 'Votre livraison est en cours de recherche d\'un livreur.' : 'Votre commande a été transmise à la boutique.');
+        if(isDelivery && p.requestId) window.lastPaidRequestId = p.requestId;
+        finish('Paiement confirmé', isDelivery ? 'Votre livraison est en cours de recherche d\'un livreur.' : 'Votre commande a été transmise à la boutique.', true);
         // Le paiement en ligne rendait la commande invisible de la boutique
         // jusqu'ici (voir confirmMarketplaceOrder) — maintenant qu'elle est
         // payée, c'est le bon moment pour la prévenir.
