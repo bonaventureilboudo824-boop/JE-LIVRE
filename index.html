@@ -1357,6 +1357,7 @@
       <div class="screen" id="screen-suivi" data-title="Suivi de livraison">
         <div id="suiviMapReal" style="height:210px;border-radius:var(--radius-lg);overflow:hidden;margin-top:0;border:1px solid var(--border)"></div>
         <div class="eta-banner"><b>Le livreur est en route</b><span id="suiviEta">12 min</span></div>
+        <div id="suiviPaid" style="display:none;margin-top:10px;background:#E3F5E6;color:#1B7A2B;border-radius:var(--radius-md);padding:10px 14px;font-weight:700;font-size:13.5px"></div>
         <div class="courier-card">
           <div class="courier-avatar"><i data-feather="user"></i></div>
           <div class="courier-info">
@@ -6558,6 +6559,10 @@
     }
     return null; // on ne bloque jamais une commande pour un ticket ; l'admin retrouve toujours l'identifiant interne
   }
+  function jlPaidChip(r){
+    return (r && r.paymentStatus === 'paid' && r.paymentMethod !== 'cash')
+      ? ' <span class="status-chip" style="background:#E3F5E6;color:#1B7A2B">Payé ✓</span>' : '';
+  }
   function jlTicketLine(t){
     if(!t) return '';
     const s = escapeHtml(String(t));
@@ -7166,6 +7171,11 @@
     deliveryAssignRef = firebase.database().ref('deliveryRequests/' + requestId);
     deliveryAssignRef.on('value', (snap) => {
       const data = snap.val();
+      const paidEl = document.getElementById('suiviPaid');
+      if (paidEl && data) {
+        if (data.paymentStatus === 'paid' && data.paymentMethod !== 'cash') { paidEl.style.display = 'block'; paidEl.textContent = 'Paiement confirmé ✓' + (data.ticket ? ' · ' + data.ticket : ''); }
+        else paidEl.style.display = 'none';
+      }
       if (!data || data.status !== 'assigned' || !data.assignedDriverId) return;
       if (window.currentDelivery && window.currentDelivery.requestId === requestId) {
         window.currentDelivery.driverId = data.assignedDriverId;
@@ -7912,7 +7922,7 @@
         }
         return `
         <div class="order-card">
-          <div class="top"><span class="id">${escapeHtml(r.trackId)}</span><span class="status-chip route">${r.status === 'assigned' ? 'En route' : 'Recherche livreur'}</span></div>${jlTicketLine(r.ticket)}
+          <div class="top"><span class="id">${escapeHtml(r.trackId)}</span><span><span class="status-chip route">${r.status === 'assigned' ? 'En route' : 'Recherche livreur'}</span>${jlPaidChip(r)}</span></div>${jlTicketLine(r.ticket)}
           <div class="route-line"><span>${escapeHtml(r.senderAddress || 'Expéditeur')}</span><div class="dash"></div><span>${escapeHtml(r.recipientAddress || 'Destinataire')}</span></div>
           <div class="eta">
             <span>${(r.type === 'express' || r.type === 'groupee') ? 'Selon la grille tarifaire' : formatFCFA(r.price)}</span>
@@ -7925,7 +7935,7 @@
       histEl.innerHTML = done.length === 0 ? '<p class="section-sub">Aucune livraison terminée pour le moment.</p>' : done.map(([, r]) => `
         <div class="hist-row">
           <div class="hist-check"><i data-feather="check"></i></div>
-          <div><b>${escapeHtml(r.trackId)}</b><span>Livraison terminée</span>${jlTicketLine(r.ticket)}</div>
+          <div><b>${escapeHtml(r.trackId)}</b><span>Livraison terminée${jlPaidChip(r)}</span>${jlTicketLine(r.ticket)}</div>
           <div class="hist-price">${(r.type === 'express' || r.type === 'groupee') ? '—' : formatFCFA(r.price)}</div>
         </div>
       `).join('');
