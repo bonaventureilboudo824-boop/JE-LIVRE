@@ -195,6 +195,7 @@
     <li class="nav-item" data-page="support" onclick="switchAdminPage('support')"><i data-feather="headphones"></i>Service client<span class="badge-count" id="navSupportCount">0</span></li>
       <li class="nav-item" data-page="reports" onclick="switchAdminPage('reports')"><i data-feather="flag"></i>Signalements<span class="badge-count" id="navReportsCount">0</span></li>
     <li class="nav-item" data-page="ads" onclick="switchAdminPage('ads')"><i data-feather="image"></i>Publicités</li>
+    <li class="nav-item" data-page="disputes" onclick="switchAdminPage('disputes')"><i data-feather="search"></i>Litiges / Tickets</li>
     <li class="nav-item" data-page="withdrawals" onclick="switchAdminPage('withdrawals')"><i data-feather="arrow-up-right"></i>Retraits<span class="badge-count" id="navWithdrawalsCount">0</span></li>
     <li class="nav-item" data-page="commissions" onclick="switchAdminPage('commissions')"><i data-feather="percent"></i>Commissions<span class="badge-count" id="navCommissionsCount">0</span></li>
     <li class="nav-item" data-page="remittances" onclick="switchAdminPage('remittances')"><i data-feather="repeat"></i>Reversements<span class="badge-count" id="navRemittancesCount">0</span></li>
@@ -418,6 +419,17 @@
     </div>
 
     <!-- PAIEMENTS EN LIGNE (confirmés par le serveur, jamais par le téléphone du client) -->
+    <div class="page" id="page-disputes">
+      <div class="panel">
+        <div class="panel-head"><h2>Recherche de litige</h2><span class="sub">Collez un ticket (LIV-…, CMD-…, PAY-…, RET-…), une référence de transaction (JL…), une référence HorusPay, un numéro de suivi (JL-12345) ou un téléphone. Tout ce qui est lié apparaît ensemble.</span></div>
+        <div style="display:flex;gap:10px;padding:0 4px 14px">
+          <input id="disputeInput" type="text" placeholder="Ex. LIV-261116-K7M2QX" style="flex:1;padding:11px 14px;border:1.5px solid #E7E5DF;border-radius:10px;font-size:14px" onkeydown="if(event.key==='Enter') runDisputeSearch()">
+          <button class="btn btn-yellow" onclick="runDisputeSearch()">Rechercher</button>
+        </div>
+        <div id="disputeResults"></div>
+      </div>
+    </div>
+
     <div class="page" id="page-payments">
       <div class="panel">
         <div class="panel-head"><h2>Paiements en ligne</h2><span class="sub">Confirmés automatiquement par le prestataire de paiement. Les lignes « À vérifier » demandent votre attention : remboursement à faire ou écart de montant.</span></div>
@@ -520,7 +532,7 @@
   function switchAdminPage(page){
     document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + page));
     document.querySelectorAll('.nav-item').forEach((n) => n.classList.toggle('active', n.dataset.page === page));
-    const titles = { overview:'Tableau de bord', reports:'Signalements', live:'Connectés en direct', registrations:'Inscriptions', deliveries:'Livraisons en cours', support:'Service client', ads:'Publicités', withdrawals:'Retraits', commissions:'Commissions', remittances:'Reversements', payments:'Paiements' };
+    const titles = { overview:'Tableau de bord', reports:'Signalements', live:'Connectés en direct', registrations:'Inscriptions', deliveries:'Livraisons en cours', support:'Service client', ads:'Publicités', withdrawals:'Retraits', commissions:'Commissions', remittances:'Reversements', payments:'Paiements', disputes:'Litiges / Tickets' };
     document.getElementById('pageTitle').textContent = titles[page] || '';
     if(page === 'live') setTimeout(() => { if(liveMap) liveMap.invalidateSize(); }, 100);
     if(page === 'ads') initAdForm();
@@ -790,6 +802,7 @@
     const html = `
       <div class="detail-section">
         <h3>Livraison</h3>
+        ${detailRow('Ticket', r.ticket || '— (créée avant les tickets)')}
         ${detailRow('Suivi', r.trackId || id)}
         ${detailRow('Statut', statusLabel)}
         ${detailRow('Distance', (r.distanceKm||0).toFixed(1) + ' km')}
@@ -833,6 +846,7 @@
     const html = `
       <div class="detail-section">
         <h3>Commande</h3>
+        ${detailRow('Ticket', o.ticket || '— (créée avant les tickets)')}
         ${detailRow('Référence', o.orderId || id)}
         ${detailRow('Statut', statusLabels[o.status] || o.status)}
         ${detailRow('Sous-total', formatFCFA(o.subtotal))}
@@ -1062,7 +1076,7 @@
     tbody.innerHTML = entries.map(([id, w]) => `
       <tr>
         <td><b>${w.kind === 'commissionBalance' ? 'Livreur · solde de commission · ' + escapeHtml(w.driverId) : w.kind === 'driver' ? 'Livreur · ' + escapeHtml(w.driverId) : escapeHtml(w.shopName || w.shopId)}</b>${(w.kind === 'driver' || w.kind === 'commissionBalance') ? `<br><span style="font-size:11.5px;color:var(--text-soft)">${networkLabels[w.network] || escapeHtml(w.network || '')}</span>` : ''}</td>
-        <td>${formatFCFA(w.amount)}</td>
+        <td>${formatFCFA(w.amount)}${w.ticket ? `<div style="font-size:11px;font-weight:700">${escapeHtml(w.ticket)}</div>` : ''}${w.payoutId ? `<div style="font-size:11px;color:var(--text-soft)">Réf. ${escapeHtml(w.payoutId)}</div>` : ''}</td>
         <td>${escapeHtml(w.phone || '—')}</td>
         <td><span class="pill ${w.status === 'paid' ? 'approved' : w.status === 'rejected' ? 'rejected' : 'pending'}">${statusLabels[w.status] || w.status}</span>${w.lastError ? `<br><span style="font-size:11px;color:#B3261E">${escapeHtml(w.lastError)}</span>` : ''}</td>
         <td>${timeAgo(w.requestedAt)}</td>
@@ -1290,8 +1304,8 @@
       const reviewed = !!p.reviewedAt;
       return `
         <tr>
-          <td><b>${escapeHtml(p.txId || id)}</b><div style="font-size:11px;color:var(--text-soft)">${escapeHtml(p.provider || '')}</div></td>
-          <td>${(p.orderIds || []).map(escapeHtml).join(', ') || '—'}${p.problemOrders ? `<div style="font-size:11px;color:#B3261E">Concernées : ${p.problemOrders.map(escapeHtml).join(', ')}</div>` : ''}</td>
+          <td><b>${escapeHtml(p.txId || id)}</b><div style="font-size:11px;color:var(--text-soft)">${escapeHtml(p.provider || '')}${p.providerRef ? ' · Réf. ' + escapeHtml(p.providerRef) : ''}</div>${p.ticket ? `<div style="font-size:11px;font-weight:700">${escapeHtml(p.ticket)}</div>` : ''}<a href="#" style="font-size:11px" onclick="openDispute('${escapeHtml(p.txId || id)}');return false">Voir le dossier</a></td>
+          <td>${(p.orderIds || []).map(escapeHtml).join(', ') || (p.requestId ? escapeHtml(p.requestId) : '—')}${p.deliveryTicket ? `<div style="font-size:11px;font-weight:700">${escapeHtml(p.deliveryTicket)}</div>` : ''}${(p.orderTickets || []).map((t) => `<div style="font-size:11px;font-weight:700">${escapeHtml(t)}</div>`).join('')}${p.problemOrders ? `<div style="font-size:11px;color:#B3261E">Concernées : ${p.problemOrders.map(escapeHtml).join(', ')}</div>` : ''}</td>
           <td>${formatFCFA(p.amount)}${p.status === 'amount_mismatch' && p.verifiedAmount != null ? `<div style="font-size:11px;color:#B3261E">Reçu : ${formatFCFA(p.verifiedAmount)}</div>` : ''}</td>
           <td><span class="pill ${st.pill}">${st.label}</span>${reviewed ? '<div style="font-size:11px;color:var(--text-soft)">Traité</div>' : ''}</td>
           <td>${timeAgo(p.createdAt)}</td>
@@ -1308,6 +1322,77 @@
     db.ref('payments/' + id).update({ reviewedAt: firebase.database.ServerValue.TIMESTAMP });
   }
   window.markPaymentReviewed = markPaymentReviewed;
+
+  // ================= Litiges : retrouver tout un dossier à partir d'un ticket =================
+  function dateFr(ts){ return ts ? new Date(ts).toLocaleString('fr-FR') : '—'; }
+  function copyText(t){ try { navigator.clipboard.writeText(t); } catch(e){ prompt('Copiez :', t); } }
+  window.copyText = copyText;
+  window.__disputeTexts = [];
+  function horusPayMessage(p){
+    return ['Bonjour l\'équipe HorusPay,', 'Je vous contacte au sujet d\'une transaction Je Livre :',
+      '- Référence marchand (Je Livre) : ' + (p.txId || ''),
+      '- Référence HorusPay : ' + (p.providerRef || 'non reçue'),
+      '- Ticket de dossier : ' + (p.ticket || '—'),
+      '- Montant : ' + (p.amount || 0) + ' ' + (p.currency || 'XOF'),
+      '- Statut chez nous : ' + (p.status || '—'),
+      '- Date de création : ' + dateFr(p.createdAt),
+      p.error ? '- Erreur enregistrée : ' + p.error : '',
+      'Merci de vérifier cette transaction.'].filter(Boolean).join('\n');
+  }
+  function disputeBlock(title, rows){
+    return '<div class="detail-section" style="margin:0 4px 14px;padding:14px;border:1px solid #E7E5DF;border-radius:12px"><h3>' + title + '</h3>' + rows.join('') + '</div>';
+  }
+  function runDisputeSearch(){
+    const raw = (document.getElementById('disputeInput').value || '').trim();
+    const out = document.getElementById('disputeResults');
+    if(!raw){ out.innerHTML = ''; return; }
+    const q = raw.toUpperCase(), qd = raw.replace(/\D/g, '');
+    const eq = (v) => v && String(v).toUpperCase() === q;
+    const phoneHit = (v) => qd.length >= 8 && v && String(v).replace(/\D/g, '').endsWith(qd);
+    window.__disputeTexts = [];
+    const blocks = [];
+    const dels = Object.entries(allDeliveryRequests).filter(([id, r]) => eq(r.ticket) || eq(r.trackId) || eq(id) || eq(r.paymentTxId) || phoneHit(r.senderPhone) || phoneHit(r.recipientPhone));
+    const ords = Object.entries(allMarketplaceOrders).filter(([id, o]) => eq(o.ticket) || eq(o.orderId) || eq(id) || eq(o.paymentTxId) || phoneHit(o.clientPhone));
+    const pays = Object.entries(allPayments).filter(([id, p]) => eq(p.txId) || eq(id) || eq(p.ticket) || eq(p.providerRef) || eq(p.deliveryTicket) || eq(p.requestId) || (p.orderTickets || []).some(eq) || (p.orderIds || []).some(eq));
+    const wds = Object.entries(allWithdrawals).filter(([id, w]) => eq(w.ticket) || eq(id) || eq(w.payoutId) || phoneHit(w.phone));
+    // On ajoute les paiements liés aux livraisons / commandes trouvées, et inversement.
+    const seenP = new Set(pays.map(([id]) => id));
+    [...dels.map(([id, r]) => [id, r.paymentTxId, r.ticket]), ...ords.map(([id, o]) => [id, o.paymentTxId, o.ticket])].forEach(([id, tx, tk]) => {
+      Object.entries(allPayments).forEach(([pid, p]) => { if(!seenP.has(pid) && (pid === tx || p.requestId === id || (p.orderIds || []).includes(id) || (tk && (p.deliveryTicket === tk || (p.orderTickets || []).includes(tk))))){ seenP.add(pid); pays.push([pid, p]); } });
+    });
+    pays.forEach(([id, p]) => {
+      (p.orderIds || []).forEach((oid) => { const o = allMarketplaceOrders[oid]; if(o && !ords.find(([i]) => i === oid)) ords.push([oid, o]); });
+      if(p.requestId && allDeliveryRequests[p.requestId] && !dels.find(([i]) => i === p.requestId)) dels.push([p.requestId, allDeliveryRequests[p.requestId]]);
+    });
+    dels.forEach(([id, r]) => blocks.push(disputeBlock('Livraison ' + escapeHtml(r.ticket || r.trackId || id), [
+      detailRow('Ticket', r.ticket || '— (avant les tickets)'), detailRow('Suivi', r.trackId), detailRow('Identifiant', id),
+      detailRow('Statut', r.status), detailRow('Prix', formatFCFA(r.price)), detailRow('Paiement', (r.paymentMethod || '—') + ' · ' + (r.paymentStatus || '—')),
+      detailRow('Créée', dateFr(r.createdAt)), detailRow('Client (uid)', r.clientUid), detailRow('Tél. expéditeur', r.senderPhone), detailRow('Tél. destinataire', r.recipientPhone),
+      detailRow('Livreur', (r.assignedDriverName || '—') + (r.assignedDriverId ? ' (' + r.assignedDriverId + ')' : '')),
+      '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="showDeliveryDetail(\'' + escapeHtml(id) + '\')">Ouvrir la fiche</button>'])));
+    ords.forEach(([id, o]) => blocks.push(disputeBlock('Commande ' + escapeHtml(o.ticket || o.orderId || id), [
+      detailRow('Ticket', o.ticket || '— (avant les tickets)'), detailRow('Référence', o.orderId || id), detailRow('Boutique', o.shopName),
+      detailRow('Statut', o.status), detailRow('Total', formatFCFA(o.total)), detailRow('Paiement', (o.paymentMethod || '—') + ' · ' + (o.paymentStatus || '—')),
+      detailRow('Créée', dateFr(o.createdAt)), detailRow('Client (uid)', o.clientUid), detailRow('Tél. client', o.clientPhone),
+      detailRow('Livreur', o.assignedDriverId || '—'),
+      '<button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="showOrderDetail(\'' + escapeHtml(id) + '\')">Ouvrir la fiche</button>'])));
+    pays.forEach(([id, p]) => {
+      const i = window.__disputeTexts.push(horusPayMessage(p)) - 1;
+      blocks.push(disputeBlock('Paiement ' + escapeHtml(p.ticket || p.txId || id), [
+        detailRow('Ticket paiement', p.ticket || '—'), detailRow('Référence Je Livre (txId)', p.txId || id), detailRow('Référence HorusPay', p.providerRef || 'non reçue'),
+        detailRow('Montant', formatFCFA(p.amount)), detailRow('Statut', (PAYMENT_STATUS[p.status] || {}).label || p.status), detailRow('Créé', dateFr(p.createdAt)),
+        p.error ? detailRow('Erreur', p.error) : '',
+        '<button class="btn btn-yellow btn-sm" style="margin-top:8px" onclick="copyText(window.__disputeTexts[' + i + '])">Copier le message pour HorusPay</button>']));
+    });
+    wds.forEach(([id, w]) => blocks.push(disputeBlock('Retrait ' + escapeHtml(w.ticket || id), [
+      detailRow('Ticket', w.ticket || '— (avant les tickets)'), detailRow('Identifiant', id), detailRow('Référence HorusPay (virement)', w.payoutId || '—'),
+      detailRow('Montant', formatFCFA(w.amount)), detailRow('Frais / net', (w.fees != null ? formatFCFA(w.fees) : '—') + ' / ' + (w.netAmount != null ? formatFCFA(w.netAmount) : '—')),
+      detailRow('Statut', w.status), detailRow('Téléphone', w.phone), detailRow('Demandé', dateFr(w.requestedAt)), w.lastError ? detailRow('Erreur', w.lastError) : ''])));
+    out.innerHTML = blocks.length ? blocks.join('') : '<div class="empty-state" style="padding:18px">Aucun dossier trouvé pour « ' + escapeHtml(raw) + ' ».</div>';
+  }
+  window.runDisputeSearch = runDisputeSearch;
+  function openDispute(q){ switchAdminPage('disputes'); document.getElementById('disputeInput').value = q; runDisputeSearch(); }
+  window.openDispute = openDispute;
 
   if(db){
     db.ref('payments').on('value', (snap) => {
@@ -1597,11 +1682,11 @@ if(db){ db.ref('presence').on('value', (snap) => { allPresence = snap.val() || {
     registrations: 'Inscriptions', ops: 'Opérations',
   };
   const ROLE_PAGES = {
-    super_admin: ['overview','live','registrations','deliveries','support','reports','ads','managers'],
-    support: ['overview','support','reports'],
+    super_admin: ['overview','live','registrations','deliveries','disputes','support','reports','ads','withdrawals','commissions','remittances','payments','managers'],
+    support: ['overview','support','reports','disputes'],
     ads: ['overview','ads'],
     registrations: ['overview','registrations'],
-    ops: ['overview','live','deliveries'],
+    ops: ['overview','live','deliveries','disputes'],
   };
   let currentAdminUser = null;
   let allManagers = {};
