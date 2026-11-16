@@ -1857,16 +1857,17 @@
           <p class="section-sub">Rechargez ce solde : tant qu'il couvre votre commission en attente, vous pouvez accepter d'autres livraisons sans la régler à chaque fois. Il peut aussi servir à la payer. Vous pouvez aussi retirer ce qui dépasse votre commission en attente.</p>
           <button class="btn btn-yellow" style="margin-top:8px;padding:10px" onclick="topUpCommission()">Recharger mon solde</button>
           <button id="payFromBalanceBtn" class="btn btn-black" style="display:none;margin-top:8px;padding:10px" onclick="payCommissionFromBalance()">Payer ma commission avec mon solde</button>
-          <button id="withdrawCommissionBtn" class="btn btn-outline" style="display:none;margin-top:8px;padding:10px" onclick="withdrawCommissionBalance()">Retirer mon solde</button>
+          <button id="withdrawCommissionBtn" class="btn btn-outline" style="display:none;margin-top:8px;padding:10px" onclick="withdrawCommissionBalance()">Retirer mon solde de garantie</button>
           <label style="display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:13px;color:var(--text-soft)">
             <input type="checkbox" id="commissionAutoPay" onchange="setCommissionAutoPay(this.checked)" style="margin-top:3px">
             <span>Prélever automatiquement ma commission sur ce solde dès qu'elle est due (j'autorise ce prélèvement).</span>
           </label>
         </div>
+        <div id="payoutAccountCard" style="margin-top:14px"></div>
         <div class="stat-row" style="margin-top:14px">
           <div class="stat-card" style="flex:1"><span>Solde disponible</span><b id="driverEarningsBalance">0 F</b></div>
         </div>
-        <button class="btn btn-outline" style="margin-top:10px" onclick="requestDriverWithdrawal()">Demander un retrait</button>
+        <button class="btn btn-yellow" style="margin-top:10px" onclick="requestDriverWithdrawal()">Retirer mes gains</button>
         <p class="section-sub" style="margin-top:6px">Crédité automatiquement pour chaque livraison payée en ligne (le client a déjà réglé la plateforme, vous n'avez rien encaissé).</p>
         <div class="avail-card">
           <div class="avail-dot" id="availDot"></div>
@@ -4190,40 +4191,14 @@
     driverDb.ref('drivers/' + window.currentDriverUser.uid + '/earningsBalance').once('value').then((snap) => {
       balEl.textContent = formatFCFA(snap.val() || 0);
     }).catch(() => {});
+    jlLoadPayoutAccount().then(jlRenderPayoutCard);
   }
 
   // Même principe que requestReferralWithdrawal / requestWithdrawal (boutique) :
   // une demande que l'équipe (admin) traite ensuite. Pour les livreurs,
   // "traiter" déclenche un vrai virement Mobile Money via HorusPay — mais ça
   // reste toujours un admin qui l'approuve, jamais automatique.
-  function requestDriverWithdrawal(){
-    if(!window.currentDriverUser) return;
-    driverDb.ref('drivers/' + window.currentDriverUser.uid + '/earningsBalance').once('value').then((snap) => {
-      const available = snap.val() || 0;
-      if(available <= 0){ alert('Aucun solde disponible pour le moment.'); return; }
-      const amountStr = prompt('Montant à retirer (FCFA) — solde disponible : ' + formatFCFA(available), String(available));
-      if(!amountStr) return;
-      const amount = parseInt(amountStr, 10);
-      if(!amount || amount <= 0 || amount > available){ alert('Montant invalide.'); return; }
-      if(amount < 100){ alert('Le montant minimum pour un retrait est de 100 F.'); return; }
-      const networkChoice = prompt('Réseau Mobile Money : tapez "orange" pour Orange Money, ou "moov" pour Moov Money.', 'orange');
-      if(!networkChoice) return;
-      const network = /moov/i.test(networkChoice) ? 'moov_bf' : 'orange_bf_direct';
-      const phone = prompt('Numéro Mobile Money pour recevoir ce retrait :', window.currentDriverUser.phone || '');
-      if(!phone) return;
-      const withdrawalId = 'w_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-      driverDb.ref('withdrawalRequests/' + withdrawalId).set({
-        kind: 'driver',
-        driverId: window.currentDriverUser.uid,
-        amount, phone, network,
-        status: 'pending',
-        requestedAt: firebase.database.ServerValue.TIMESTAMP,
-      }).then(() => {
-        alert('Demande de retrait envoyée. Elle sera traitée par notre équipe sous peu.');
-        loadDriverEarningsBalance();
-      }).catch((e) => alert('Erreur : ' + e.message));
-    });
-  }
+  function requestDriverWithdrawal(){ jlOpenWithdrawSheet('earnings'); }
   window.requestDriverWithdrawal = requestDriverWithdrawal;
 
   // ---- Géo-utilitaires (mêmes fonctions que la démo de suivi) ----
@@ -5953,7 +5928,11 @@
   }
   window.jlSponsorReturnPending = jlSponsorReturnPending;
   function jlMaybeSponsorReturn(role){
-    if(!jlSponsorReturnPending(role)) return;
+    if(!jlSponsorReturnPending(role)){
+      // Pas de retour de paiement en cours : on demande quand même au serveur de rattraper un éventuel paiement resté en attente.
+      try { const c0 = jlSponsorCtx(role); if(c0) serverCallable(c0.auth, 'confirmPayment')({}).catch(() => {}); } catch(e){}
+      return;
+    }
     const tx = window.pendingPaymentReturnTx; window.pendingPaymentReturnTx = null; window.pendingPaymentReturnKind = null;
     const c = jlSponsorCtx(role); if(!c) return;
     showPayOverlay('Vérification du paiement…', 'Nous attendons la confirmation de votre paiement.', false);
@@ -9339,34 +9318,182 @@ window.payCommission = payCommission;
 
 // Retrait du solde : virement Mobile Money immédiat vers le numéro enregistré du livreur.
 function jlMaskPhone(p){ const d = String(p || '').replace(/\D/g, ''); return d.length >= 6 ? d.slice(0, 2) + ' •• •• ' + d.slice(-2) : 'votre numéro enregistré'; }
-async function withdrawCommissionBalance(){
-  const d = window.currentDriverUser; if(!d) return;
-  const available = Math.max(0, (d.commissionBalance || 0) - (d.pendingCommission || 0));
-  const max = Math.min(available, 200000);
-  if(available < 500){ alert('Aucun montant retirable pour le moment (minimum 500 F, après votre commission en attente).'); return; }
-  const raw = prompt('Montant à retirer (de 500 à ' + max + ' F) :', String(max));
-  if(!raw) return;
-  const amount = parseInt(String(raw).replace(/\s/g, ''), 10);
-  if(!amount || amount < 500 || amount > max){ alert('Montant invalide : entre 500 et ' + max + ' F.'); return; }
-  const net = prompt('Réseau Mobile Money : tapez "orange" pour Orange Money, ou "moov" pour Moov Money.', 'orange');
-  if(!net) return;
-  const network = /moov/i.test(net) ? 'moov_bf' : 'orange_bf_direct';
-  if(!confirm('Retirer ' + formatFCFA(amount) + ' vers ' + jlMaskPhone(d.phone) + ' ? Le virement part tout de suite.')) return;
-  // Clé unique par retrait voulu : si la connexion coupe et que la demande est renvoyée, le serveur ne vire qu'une seule fois.
-  const sig = amount + '|' + network;
-  if(!window.__jlWithdrawKey || window.__jlWithdrawKey.sig !== sig){
-    const rnd = (window.crypto && crypto.getRandomValues) ? Array.from(crypto.getRandomValues(new Uint8Array(16)), x => x.toString(16).padStart(2, '0')).join('') : (Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
-    window.__jlWithdrawKey = { sig, key: 'wk' + rnd };
-  }
-  try {
-    const res = await serverCallable(driverAuth, 'requestCommissionWithdrawal')({ amount, network, requestKey: window.__jlWithdrawKey.key });
-    window.__jlWithdrawKey = null;
-    const out = (res && res.data) || {};
-    alert('Retrait effectué : ' + formatFCFA(out.netAmount || amount) + ' envoyés sur votre numéro' + ((out.fees || 0) > 0 ? ' (frais : ' + formatFCFA(out.fees) + ')' : '') + '. Nouveau solde : ' + formatFCFA(out.balanceLeft || 0) + '.');
-  } catch(e){
-    alert((e && e.message) ? e.message : 'Retrait impossible pour le moment. Réessayez dans un instant.');
+function withdrawCommissionBalance(){ jlOpenWithdrawSheet('commission'); }
+
+// ================= Compte de paiement du livreur + formulaire de retrait =================
+const JL_PAYOUT_NETWORKS = {
+  orange_bf_direct: { label: 'Orange Money', color: '#FF7900' },
+  moov_bf: { label: 'Moov Money', color: '#0072CE' },
+};
+window.driverPayoutAccount = undefined;
+function jlLoadPayoutAccount(force){
+  const d = window.currentDriverUser;
+  if(!d) return Promise.resolve(null);
+  if(!force && window.driverPayoutAccount !== undefined) return Promise.resolve(window.driverPayoutAccount);
+  return driverDb.ref('driverPayoutAccounts/' + d.uid).once('value').then((sn) => { window.driverPayoutAccount = sn.val() || null; return window.driverPayoutAccount; }).catch(() => null);
+}
+function jlMaskAcct(p){ const d = String(p || '').replace(/\D/g, ''); return d.length === 8 ? d.slice(0, 2) + ' •• •• ' + d.slice(6) : '••••••••'; }
+function jlNetBadge(net){
+  const n = JL_PAYOUT_NETWORKS[net] || { label: 'Mobile Money', color: '#888' };
+  return `<span style="display:inline-flex;align-items:center;gap:6px;font-weight:800;font-size:13.5px"><span style="width:12px;height:12px;border-radius:50%;background:${n.color};display:inline-block"></span>${n.label}</span>`;
+}
+function jlRenderPayoutCard(acct){
+  const el = document.getElementById('payoutAccountCard'); if(!el) return;
+  if(acct){
+    el.innerHTML = `<div style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius-md);padding:14px;display:flex;align-items:center;gap:12px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;color:var(--text-soft);margin-bottom:3px">Mon compte de paiement</div>
+        <div>${jlNetBadge(acct.network)} <span style="font-weight:700;margin-left:6px">${jlMaskAcct(acct.phone)}</span></div>
+        <div style="font-size:13px;color:var(--text-soft);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(acct.holderName || '')}</div>
+      </div>
+      <button class="btn btn-outline" style="width:auto;padding:8px 14px;font-size:13px" onclick="jlOpenPayoutAccountSheet()">Modifier</button></div>`;
+  } else {
+    el.innerHTML = `<div style="background:#FFF3D2;border:1px solid #FFE39A;border-radius:var(--radius-md);padding:14px">
+      <b>Ajoutez votre compte de paiement</b>
+      <p class="section-sub" style="margin:4px 0 10px">Enregistrez une seule fois votre Mobile Money (réseau, numéro, nom) : vos retraits arriveront directement dessus.</p>
+      <button class="btn btn-yellow" style="padding:11px" onclick="jlOpenPayoutAccountSheet()">Ajouter mon compte</button></div>`;
   }
 }
+
+// Fenêtre qui monte du bas de l'écran (au lieu des boîtes de dialogue du navigateur).
+function jlSheet(inner){
+  if(!document.getElementById('jlSheetStyle')){
+    const st = document.createElement('style'); st.id = 'jlSheetStyle';
+    st.textContent = '.jl-sheet-bg{position:fixed;inset:0;background:rgba(13,13,12,.55);z-index:99990;display:flex;align-items:flex-end;justify-content:center;animation:jlFade .18s ease}.jl-sheet{background:#fff;width:100%;max-width:480px;max-height:92vh;overflow:auto;border-radius:22px 22px 0 0;padding:10px 18px 22px;animation:jlUp .22s ease}.jl-sheet .grab{width:42px;height:4px;border-radius:4px;background:#DAD8D2;margin:0 auto 14px}.jl-sheet h3{font-family:"Barlow Condensed",sans-serif;font-size:24px;margin:0 0 4px}.jl-sheet .inp{width:100%;padding:13px 14px;border:1.5px solid var(--border);border-radius:14px;font:inherit;font-size:16px;background:#fff}.jl-sheet .inp:focus{outline:none;border-color:#0D0D0C}.jl-sheet .lbl{display:block;font-size:12.5px;font-weight:700;margin:14px 0 6px}.jl-net{flex:1;border:1.5px solid var(--border);border-radius:14px;padding:12px;background:#fff;text-align:left;font:inherit}.jl-net.on{border-color:#0D0D0C;background:#FFF8E1;box-shadow:0 0 0 2px #FFC629 inset}.jl-chip{border:1px solid var(--border);background:#fff;border-radius:999px;padding:7px 13px;font-size:13px;font-weight:600}@keyframes jlUp{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}@keyframes jlFade{from{opacity:0}to{opacity:1}}';
+    document.head.appendChild(st);
+  }
+  const bg = document.createElement('div'); bg.className = 'jl-sheet-bg';
+  bg.innerHTML = '<div class="jl-sheet" role="dialog" aria-modal="true"><div class="grab"></div>' + inner + '</div>';
+  document.body.appendChild(bg);
+  const close = () => { bg.remove(); };
+  bg.addEventListener('click', (e) => { if(e.target === bg) close(); });
+  return { el: bg.firstChild, close };
+}
+
+function jlOpenPayoutAccountSheet(afterSave){
+  const d = window.currentDriverUser; if(!d) return;
+  const cur = window.driverPayoutAccount || {};
+  let net = cur.network || '';
+  const sh = jlSheet(`
+    <h3>Mon compte de paiement</h3>
+    <p class="section-sub" style="margin:0">Vos retraits seront envoyés uniquement sur ce compte Mobile Money.</p>
+    <span class="lbl">Réseau</span>
+    <div style="display:flex;gap:10px">
+      ${Object.entries(JL_PAYOUT_NETWORKS).map(([k, v]) => `<button type="button" class="jl-net${net === k ? ' on' : ''}" data-net="${k}"><span style="display:block;width:14px;height:14px;border-radius:50%;background:${v.color};margin-bottom:8px"></span><b>${v.label}</b></button>`).join('')}
+    </div>
+    <span class="lbl">Numéro Mobile Money</span>
+    <div style="display:flex;align-items:center;gap:8px"><span style="font-weight:800;padding:0 4px">+226</span><input class="inp" id="paAcctPhone" inputmode="numeric" maxlength="11" placeholder="70 12 34 56" value="${escapeHtml(String(cur.phone || '').replace(/(\\d{2})(?=\\d)/g, '$1 ').trim())}"></div>
+    <span class="lbl">Nom du titulaire</span>
+    <input class="inp" id="paAcctName" maxlength="60" placeholder="Comme sur votre compte Mobile Money" value="${escapeHtml(cur.holderName || '')}">
+    <div id="paAcctErr" style="color:#B3261E;font-size:13px;margin-top:10px;display:none"></div>
+    <button class="btn btn-yellow" id="paAcctSave" style="margin-top:18px">Enregistrer</button>
+    <button class="btn btn-outline" id="paAcctCancel" style="margin-top:8px">Annuler</button>`);
+  const $ = (id) => sh.el.querySelector('#' + id);
+  sh.el.querySelectorAll('.jl-net').forEach((b) => b.addEventListener('click', () => { net = b.dataset.net; sh.el.querySelectorAll('.jl-net').forEach((x) => x.classList.toggle('on', x === b)); }));
+  $('paAcctCancel').onclick = sh.close;
+  $('paAcctSave').onclick = async () => {
+    const phone = $('paAcctPhone').value.replace(/\D/g, '').replace(/^226(?=\d{8}$)/, '');
+    const name = $('paAcctName').value.trim().replace(/\s+/g, ' ');
+    const err = (m) => { const e = $('paAcctErr'); e.textContent = m; e.style.display = 'block'; };
+    if(!net) return err('Choisissez Orange Money ou Moov Money.');
+    if(!/^\d{8}$/.test(phone)) return err('Entrez un numéro à 8 chiffres (ex. 70 12 34 56).');
+    if(name.length < 2) return err('Entrez le nom du titulaire du compte.');
+    $('paAcctSave').disabled = true; $('paAcctSave').textContent = 'Enregistrement…';
+    try {
+      const acct = { network: net, phone, holderName: name, updatedAt: firebase.database.ServerValue.TIMESTAMP };
+      await driverDb.ref('driverPayoutAccounts/' + d.uid).set(acct);
+      window.driverPayoutAccount = { network: net, phone, holderName: name };
+      jlRenderPayoutCard(window.driverPayoutAccount);
+      sh.close();
+      if(typeof afterSave === 'function') afterSave(window.driverPayoutAccount);
+    } catch(e){ $('paAcctSave').disabled = false; $('paAcctSave').textContent = 'Enregistrer'; err("Enregistrement impossible. Vérifiez votre connexion et réessayez."); }
+  };
+}
+window.jlOpenPayoutAccountSheet = jlOpenPayoutAccountSheet;
+
+// kind = 'earnings' (gains de livraison : demande traitée par l'équipe) ou 'commission' (solde de garantie : virement immédiat).
+async function jlOpenWithdrawSheet(kind){
+  const d = window.currentDriverUser; if(!d) return;
+  const acct = await jlLoadPayoutAccount(true);
+  if(!acct){ jlOpenPayoutAccountSheet(() => jlOpenWithdrawSheet(kind)); return; }
+  let available = 0, min = 100, max = 0;
+  if(kind === 'commission'){
+    available = Math.max(0, (d.commissionBalance || 0) - (d.pendingCommission || 0)); min = 500; max = Math.min(available, 200000);
+    if(available < min){ jlSheet(`<h3>Retrait impossible</h3><p class="section-sub">Il faut au moins ${formatFCFA(min)} de solde de garantie disponible (après votre commission en attente). Disponible actuellement : ${formatFCFA(available)}.</p><button class="btn btn-yellow" style="margin-top:14px" onclick="this.closest('.jl-sheet-bg').remove()">Compris</button>`); return; }
+  } else {
+    try { available = (await driverDb.ref('drivers/' + d.uid + '/earningsBalance').once('value')).val() || 0; } catch(e){ available = 0; }
+    max = available;
+    if(available < min){ jlSheet(`<h3>Aucun solde à retirer</h3><p class="section-sub">Vos gains s'ajoutent ici après chaque livraison payée en ligne. Solde actuel : ${formatFCFA(available)}.</p><button class="btn btn-yellow" style="margin-top:14px" onclick="this.closest('.jl-sheet-bg').remove()">Compris</button>`); return; }
+  }
+  const title = kind === 'commission' ? 'Retirer mon solde de garantie' : 'Retirer mes gains';
+  const note = kind === 'commission' ? 'Le virement part tout de suite sur votre compte.' : 'Votre demande est examinée par notre équipe, puis le virement est envoyé sur votre compte.';
+  const sh = jlSheet(`
+    <h3>${title}</h3>
+    <div style="background:#0D0D0C;color:#fff;border-radius:16px;padding:14px 16px;margin-top:10px">
+      <div style="font-size:12px;opacity:.7">Disponible</div>
+      <div style="font-family:'Barlow Condensed',sans-serif;font-weight:800;font-size:34px;line-height:1.1">${formatFCFA(available)}</div>
+    </div>
+    <span class="lbl">Montant à retirer</span>
+    <input class="inp" id="wdAmount" inputmode="numeric" placeholder="Montant en FCFA" value="${max}" style="font-size:20px;font-weight:700">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px" id="wdChips">
+      <button type="button" class="jl-chip" data-v="${max}">Tout</button>
+      ${[1000, 5000, 10000, 25000].filter((v) => v >= min && v < max).map((v) => `<button type="button" class="jl-chip" data-v="${v}">${formatFCFA(v)}</button>`).join('')}
+    </div>
+    <span class="lbl">Envoyé sur</span>
+    <div style="border:1.5px solid var(--border);border-radius:14px;padding:12px 14px;display:flex;align-items:center;gap:10px">
+      <div style="flex:1;min-width:0"><div>${jlNetBadge(acct.network)} <b style="margin-left:6px">${jlMaskAcct(acct.phone)}</b></div><div style="font-size:12.5px;color:var(--text-soft);margin-top:2px">${escapeHtml(acct.holderName || '')}</div></div>
+      <button type="button" class="jl-chip" id="wdEdit">Modifier</button>
+    </div>
+    <p class="section-sub" style="margin:10px 0 0">${note} Minimum ${formatFCFA(min)}.</p>
+    <div id="wdErr" style="color:#B3261E;font-size:13px;margin-top:8px;display:none"></div>
+    <button class="btn btn-yellow" id="wdGo" style="margin-top:16px">Retirer</button>
+    <button class="btn btn-outline" id="wdCancel" style="margin-top:8px">Annuler</button>`);
+  const $ = (id) => sh.el.querySelector('#' + id);
+  const amountEl = $('wdAmount');
+  const readAmt = () => parseInt(String(amountEl.value).replace(/\D/g, ''), 10) || 0;
+  const refreshBtn = () => { const a = readAmt(); $('wdGo').textContent = a >= min && a <= max ? 'Retirer ' + formatFCFA(a) : 'Retirer'; };
+  amountEl.addEventListener('input', refreshBtn); refreshBtn();
+  sh.el.querySelectorAll('#wdChips .jl-chip').forEach((c) => c.addEventListener('click', () => { amountEl.value = c.dataset.v; refreshBtn(); }));
+  $('wdCancel').onclick = sh.close;
+  $('wdEdit').onclick = () => { sh.close(); jlOpenPayoutAccountSheet(() => jlOpenWithdrawSheet(kind)); };
+  const done = (title2, msg) => {
+    sh.el.innerHTML = `<div class="grab"></div><div style="text-align:center;padding:10px 0 4px"><div style="width:68px;height:68px;border-radius:50%;background:#FFC629;display:inline-flex;align-items:center;justify-content:center"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#0D0D0C" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-10"/></svg></div><h3 style="margin-top:12px">${title2}</h3><p class="section-sub">${msg}</p></div><button class="btn btn-yellow" style="margin-top:14px" id="wdClose">Fermer</button>`;
+    sh.el.querySelector('#wdClose').onclick = sh.close;
+  };
+  $('wdGo').onclick = async () => {
+    const amount = readAmt();
+    const err = (m) => { const e = $('wdErr'); e.textContent = m; e.style.display = 'block'; };
+    if(amount < min) return err('Le minimum est de ' + formatFCFA(min) + '.');
+    if(amount > max) return err('Le maximum est de ' + formatFCFA(max) + '.');
+    $('wdGo').disabled = true; $('wdGo').textContent = 'Envoi en cours…'; $('wdErr').style.display = 'none';
+    try {
+      if(kind === 'commission'){
+        // Clé unique par retrait voulu : si la connexion coupe et que la demande est renvoyée, le serveur ne vire qu'une seule fois.
+        const sig = amount + '|' + acct.network;
+        if(!window.__jlWithdrawKey || window.__jlWithdrawKey.sig !== sig){
+          const rnd = (window.crypto && crypto.getRandomValues) ? Array.from(crypto.getRandomValues(new Uint8Array(16)), (x) => x.toString(16).padStart(2, '0')).join('') : (Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).slice(0, 32);
+          window.__jlWithdrawKey = { sig, key: 'wk' + rnd };
+        }
+        const res = await serverCallable(driverAuth, 'requestCommissionWithdrawal')({ amount, network: acct.network, requestKey: window.__jlWithdrawKey.key });
+        window.__jlWithdrawKey = null;
+        const out = (res && res.data) || {};
+        done('Retrait envoyé', formatFCFA(out.netAmount || amount) + ' ont été envoyés sur votre compte' + ((out.fees || 0) > 0 ? ' (frais : ' + formatFCFA(out.fees) + ')' : '') + '.');
+      } else {
+        const id = 'w_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+        await driverDb.ref('withdrawalRequests/' + id).set({
+          kind: 'driver', driverId: d.uid, amount, phone: '+226' + acct.phone, network: acct.network, holderName: acct.holderName || '',
+          status: 'pending', requestedAt: firebase.database.ServerValue.TIMESTAMP,
+        });
+        loadDriverEarningsBalance();
+        done('Demande envoyée', 'Votre demande de ' + formatFCFA(amount) + ' est enregistrée. Notre équipe la traite sous peu et le virement arrive sur votre compte.');
+      }
+    } catch(e){
+      $('wdGo').disabled = false; refreshBtn();
+      err((e && e.message && !/permission_denied/i.test(e.message)) ? e.message : 'Retrait impossible pour le moment. Réessayez dans un instant.');
+    }
+  };
+}
+window.jlOpenWithdrawSheet = jlOpenWithdrawSheet;
 window.withdrawCommissionBalance = withdrawCommissionBalance;
 </script>
 </body>
