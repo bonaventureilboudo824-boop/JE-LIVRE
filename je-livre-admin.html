@@ -543,6 +543,26 @@
     firebase.initializeApp(firebaseConfig);
   }
   const db = (typeof firebase !== 'undefined') ? firebase.database() : null;
+  // Les écouteurs temps réel sont posés dès l'ouverture de la page, avant la connexion de l'admin :
+  // Firebase les refuse alors (« permission denied ») et ne les relance jamais tout seul, d'où des
+  // listes bloquées sur « Chargement… ». On garde donc ceux qui ont été refusés et on les relance
+  // dès que l'admin est connecté.
+  const jlRetryListeners = [];
+  if(db){
+    const origRef = db.ref.bind(db);
+    db.ref = function(p){
+      const r = origRef(p);
+      const origOn = r.on.bind(r);
+      r.on = function(ev, cb, errcb){
+        return origOn(ev, cb, function(e){
+          jlRetryListeners.push(function(){ r.on(ev, cb, errcb); });
+          if(typeof errcb === 'function') errcb(e);
+        });
+      };
+      return r;
+    };
+  }
+  function jlRetryDeniedListeners(){ jlRetryListeners.splice(0).forEach(function(f){ try{ f(); }catch(e){} }); }
 
   function formatFCFA(n){ return (n || 0).toLocaleString('fr-FR') + ' F'; }
   function timeAgo(ts){
@@ -1904,7 +1924,7 @@ if(db){ db.ref('presence').on('value', (snap) => { allPresence = snap.val() || {
     } catch(e){ persistCleared = Promise.resolve(); }
     persistCleared.then(() => {
       auth.onAuthStateChanged((user) => {
-        if(user){ checkAdminAccess(user); }
+        if(user){ checkAdminAccess(user); setTimeout(jlRetryDeniedListeners, 800); }
         else { currentAdminUser = null; showLogin(); }
       });
     });
