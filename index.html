@@ -6,6 +6,20 @@
 <title>Je Livre — Bêta</title>
 <link rel="manifest" href="manifest.json">
 <script>
+/* Retour de paiement dans l'application Android : la page de paiement ramène l'écran intégré sur le site
+   (jelivre.shop), où l'on n'est pas connecté. On renvoie aussitôt vers l'application elle-même (https://localhost,
+   servie en local par l'appli), qui, elle, est connectée et peut confirmer le paiement. */
+(function(){
+  try{
+    var q = location.search || '';
+    var inApp = /;\s*wv\)/.test(navigator.userAgent || '') || !!window.Capacitor;
+    if(inApp && location.hostname !== 'localhost' && /[?&]payment=return(&|$)/.test(q) && /[?&]tx=/.test(q)){
+      location.replace('https://localhost/' + q);
+    }
+  }catch(e){}
+})();
+</script>
+<script>
 /* Capture précoce de l'invite d'installation (Android/Chrome) et détection de l'app native (Play Store) */
 (function(){
   try{
