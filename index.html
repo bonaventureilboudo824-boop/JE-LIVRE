@@ -6479,9 +6479,31 @@
 
   // Envoie le fichier en attente (s'il y en a un) vers Cloudinary et
   // renvoie son URL publique, ou null si rien n'a été sélectionné.
+
+  // ---- Stockage des fichiers : Supabase (principal), Cloudinary (secours) ----
+  const SUPABASE_URL = 'https://fnsdpokyfsxizczvcipx.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_PyrK1L8QiUdwWb4t0YF-7Q_7BSaqo-G';
+  const SUPABASE_BUCKET = 'jelivre-media';
+  async function jlUploadSupabase(file){
+    const t = file.type || '';
+    const folder = t.startsWith('image/') ? 'img' : t.startsWith('video/') ? 'vid' : 'doc';
+    const ext = ((file.name || '').match(/\.([A-Za-z0-9]{2,5})$/) || [,''])[1].toLowerCase() || (t.split('/')[1] || 'bin').replace(/[^a-z0-9]/g, '').slice(0, 5);
+    const rnd = (window.crypto && crypto.getRandomValues) ? Array.from(crypto.getRandomValues(new Uint8Array(8)), (x) => x.toString(16).padStart(2, '0')).join('') : Math.random().toString(36).slice(2, 12);
+    const path = folder + '/' + Date.now().toString(36) + '_' + rnd + '.' + ext;
+    const res = await fetch(SUPABASE_URL + '/storage/v1/object/' + SUPABASE_BUCKET + '/' + path, {
+      method: 'POST',
+      headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + SUPABASE_KEY, 'Content-Type': t || 'application/octet-stream', 'x-upsert': 'false' },
+      body: file,
+    });
+    if(!res.ok) throw new Error('supabase ' + res.status);
+    return SUPABASE_URL + '/storage/v1/object/public/' + SUPABASE_BUCKET + '/' + path;
+  }
   function uploadPendingFile(key){
     const file = window.pendingUploads[key];
     if(!file) return Promise.resolve(null);
+    return jlUploadSupabase(file).catch((err) => { console.warn('Supabase indisponible, secours Cloudinary', err); return uploadViaCloudinary(file); });
+  }
+  function uploadViaCloudinary(file){
     const form = new FormData();
     form.append('file', file);
     form.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
