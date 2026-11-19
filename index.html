@@ -2461,6 +2461,27 @@
     };
   }
 
+  // ---- Connexion à Supabase avec le compte Firebase (Third-Party Auth) ----
+  // Le serveur ajoute au compte le claim role='authenticated' (une seule fois par compte) ;
+  // on rafraîchit alors le jeton pour qu'il le contienne. Silencieux : une erreur ici ne gêne jamais l'appli.
+  const jlSbRoleDone = {};
+  async function jlEnsureSupabaseRole(authApp, user){
+    try {
+      if(!user || jlSbRoleDone[user.uid]) return;
+      jlSbRoleDone[user.uid] = true;
+      const r = await serverCallable(authApp, 'supabaseRole')({});
+      if(r && r.data && r.data.changed) await user.getIdToken(true);
+    } catch(e){ delete jlSbRoleDone[user && user.uid]; }
+  }
+  // Appel REST à Supabase avec le jeton du compte connecté (ou la clé publique si personne).
+  async function jlSbFetch(authApp, path, opts){
+    const o = opts || {};
+    const user = authApp && authApp.currentUser;
+    let token = SUPABASE_KEY;
+    if(user){ try { token = await user.getIdToken(); } catch(e){} }
+    return fetch(SUPABASE_URL + '/rest/v1/' + path, Object.assign({}, o, { headers: Object.assign({ apikey: SUPABASE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, o.headers || {}) }));
+  }
+
   // Même numéro, compte différent selon le rôle (une personne peut être
   // cliente ET livreur) : doit correspondre EXACTEMENT au mappage du
   // serveur (functions/index.js, ROLE_EMAIL_SUFFIX). Le client garde son
@@ -2960,6 +2981,7 @@
     });
   }
   appAuth.onAuthStateChanged((user) => {
+    jlEnsureSupabaseRole(appAuth, user);
     jlOnClientAuth(user);
     if(user){
       loadAppUserProfile(user);
@@ -3390,6 +3412,7 @@
   // Reconnaît automatiquement une boutique déjà connectée au rechargement de
   // l'app, via l'attribut phoneVerified (posé uniquement par le serveur).
   vendorAuth.onAuthStateChanged((user) => {
+    jlEnsureSupabaseRole(vendorAuth, user);
     jlOnVendorAuth(user);
     if(!user){ window.currentVendorUser = null; resetVendorSession(); return; }
     user.getIdTokenResult(true).then((token) => {
@@ -3668,7 +3691,7 @@
   }
   window.entrepriseLogout = entrepriseLogout;
 
-  entrepriseAuth.onAuthStateChanged((user) => { jlOnEntrepriseAuth(user);
+  entrepriseAuth.onAuthStateChanged((user) => { jlEnsureSupabaseRole(entrepriseAuth, user); jlOnEntrepriseAuth(user);
     if(!user){ window.currentEntrepriseUser = null; resetEntrepriseSession(); return; }
     user.getIdTokenResult(true).then((token) => {
       if(token.claims.phoneVerified !== true) return;
@@ -3975,7 +3998,7 @@
   // explicitement — la persistance est gérée par Firebase. On reconnaît
   // cette session déjà ouverte au rechargement de l'app, via l'attribut
   // phoneVerified (posé uniquement par le serveur, voir claimVerification).
-  driverAuth.onAuthStateChanged((user) => { jlOnDriverAuth(user);
+  driverAuth.onAuthStateChanged((user) => { jlEnsureSupabaseRole(driverAuth, user); jlOnDriverAuth(user);
     if(!user){ window.currentDriverUser = null; resetDriverSession(); return; }
     user.getIdTokenResult(true).then((token) => {
       if(token.claims.phoneVerified !== true) return;
