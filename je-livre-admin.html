@@ -543,6 +543,30 @@
     firebase.initializeApp(firebaseConfig);
   }
   const db = (typeof firebase !== 'undefined') ? firebase.database() : null;
+
+  // ---- Supabase : catalogue (boutiques, produits, Reels, pubs, lieux, bans) ----
+  const SUPABASE_URL = 'https://dtporejrpnndhffbiiim.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_4GFi5c-Mu4nqmesgTgXVwQ_xLtl8DQo';
+  let sbRoleDone = false;
+  // Le serveur ajoute au compte admin le droit "authenticated" (une seule fois), puis on rafraîchit le jeton.
+  async function sbEnsureRole(user){
+    try {
+      if(!user || sbRoleDone) return; sbRoleDone = true;
+      const t = await user.getIdToken();
+      const r = await fetch(SERVER_BASE_URL + '/api/supabaseRole', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + t }, body: '{}' });
+      const b = await r.json().catch(() => ({}));
+      if(b && b.changed) await user.getIdToken(true);
+    } catch(e){ sbRoleDone = false; }
+  }
+  async function sb(path, opts){
+    const o = opts || {};
+    let token = SUPABASE_KEY;
+    try { if(auth && auth.currentUser) token = await auth.currentUser.getIdToken(); } catch(e){}
+    const r = await fetch(SUPABASE_URL + '/rest/v1/' + path, { method: o.method || 'GET', headers: Object.assign({ apikey: SUPABASE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, o.headers || {}), body: o.body === undefined ? undefined : JSON.stringify(o.body) });
+    const txt = await r.text();
+    if(!r.ok){ let m = txt; try { m = JSON.parse(txt).message || txt; } catch(e){} throw new Error('Supabase : ' + m); }
+    return txt ? JSON.parse(txt) : null;
+  }
   // Les écouteurs temps réel sont posés dès l'ouverture de la page, avant la connexion de l'admin :
   // Firebase les refuse alors (« permission denied ») et ne les relance jamais tout seul, d'où des
   // listes bloquées sur « Chargement… ». On garde donc ceux qui ont été refusés et on les relance
@@ -719,6 +743,7 @@
     }
     if(reg && reg.type === 'boutique'){
       db.ref('shops/' + id).update({ status, approved: status === 'approved' });
+      sb('shops?id=eq.' + encodeURIComponent(id), { method: 'PATCH', body: { status, approved: status === 'approved' }, headers: { Prefer: 'return=minimal' } }).catch((e) => alert('Boutique non mise à jour dans Supabase : ' + e.message));
     }
     if(reg && reg.type === 'entreprise'){
       db.ref('enterprises/' + id).update({ status, approved: status === 'approved' });
@@ -1395,8 +1420,9 @@
     const q = normPlace(document.getElementById('placeSearch').value);
     const tbody = document.getElementById('placesTableBody');
     if(q.length < 2){ tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Tapez au moins 2 lettres.</td></tr>'; return; }
-    db.ref('places').orderByChild('k').startAt(q).endAt(q + '\uf8ff').limitToFirst(50).once('value').then((snap) => {
-      foundPlaces = snap.val() || {};
+    sb('places?select=*&k=like.' + encodeURIComponent(q.replace(/[%_*]/g, ' ') + '*') + '&order=k.asc&limit=50').then((rows) => {
+      foundPlaces = {};
+      (rows || []).forEach((r) => { foundPlaces[r.id] = { n: r.n, k: r.k, lat: r.lat, lng: r.lng, t: r.t, s: r.s, o: r.o, fixed: r.fixed, at: r.at }; });
       const e = Object.entries(foundPlaces);
       tbody.innerHTML = e.length ? e.map(([id, p]) => `<tr>
         <td><b>${escapeHtml(p.n)}</b></td><td>${escapeHtml(p.t || '')}</td>
@@ -1433,15 +1459,15 @@
     if(!n || isNaN(lat) || isNaN(lng)){ msg.textContent = 'Nom, latitude et longitude sont obligatoires (cliquez sur la carte).'; msg.style.color = '#B3261E'; return; }
     const id = editingPlaceId || ('a_' + Date.now().toString(36));
     const rec = { n: n.slice(0, 80), k: normPlace(n), lat: Math.round(lat * 1e5) / 1e5, lng: Math.round(lng * 1e5) / 1e5,
-      t: document.getElementById('placeType').value, s: (foundPlaces[id] && foundPlaces[id].s === 'geonames') ? 'geonames' : 'admin', fixed: true, at: firebase.database.ServerValue.TIMESTAMP };
+      t: document.getElementById('placeType').value, s: (foundPlaces[id] && foundPlaces[id].s === 'geonames') ? 'geonames' : 'admin', fixed: true, at: Date.now() };
     if(foundPlaces[id] && foundPlaces[id].o) rec.o = 1;
-    db.ref('places/' + id).set(rec).then(() => { msg.style.color = '#188038'; msg.textContent = 'Enregistré : « ' + n + ' » est maintenant disponible dans la recherche de l\'app.'; resetPlaceForm(); })
+    sb('places?on_conflict=id', { method: 'POST', body: Object.assign({ id }, rec), headers: { Prefer: 'resolution=merge-duplicates,return=minimal' } }).then(() => { msg.style.color = '#188038'; msg.textContent = 'Enregistré : « ' + n + ' » est maintenant disponible dans la recherche de l\'app.'; resetPlaceForm(); })
       .catch((e) => { msg.style.color = '#B3261E'; msg.textContent = 'Erreur : ' + e.message; });
   }
   window.savePlace = savePlace;
   function deletePlace(id){
     const p = foundPlaces[id]; if(!p || !confirm('Supprimer « ' + p.n + ' » ?')) return;
-    db.ref('places/' + id).remove().then(searchPlaces).catch((e) => alert('Erreur : ' + e.message));
+    sb('places?id=eq.' + encodeURIComponent(id), { method: 'DELETE', headers: { Prefer: 'return=minimal' } }).then(searchPlaces).catch((e) => alert('Erreur : ' + e.message));
   }
   window.deletePlace = deletePlace;
 
@@ -1577,16 +1603,24 @@
     feather.replace({ 'stroke-width':2 });
   }
 
+  async function loadAds(){
+    try {
+      const rows = await sb('ads?select=id,data');
+      allAds = {}; (rows || []).forEach((r) => { allAds[r.id] = r.data || {}; });
+      renderAds();
+    } catch(e){ /* pas encore connecté : on réessaiera */ }
+  }
+  setInterval(() => { if(typeof auth !== 'undefined' && auth && auth.currentUser) loadAds(); }, 30000);
   function toggleAd(id, makeActive){
-    if(!db) return;
-    db.ref('ads/' + id).update({ active: makeActive });
+    const cur = allAds[id]; if(!cur) return;
+    sb('ads?id=eq.' + encodeURIComponent(id), { method: 'PATCH', body: { data: Object.assign({}, cur, { active: makeActive }) }, headers: { Prefer: 'return=minimal' } }).then(loadAds).catch((e) => alert('Erreur : ' + e.message));
   }
   window.toggleAd = toggleAd;
 
   function deleteAd(id){
     if(!db) return;
     if(!confirm('Supprimer cette publicité ?')) return;
-    db.ref('ads/' + id).remove();
+    sb('ads?id=eq.' + encodeURIComponent(id), { method: 'DELETE', headers: { Prefer: 'return=minimal' } }).then(loadAds).catch((e) => alert('Erreur : ' + e.message));
   }
   window.deleteAd = deleteAd;
 
@@ -1635,12 +1669,13 @@
 
     function save(image){
       const id = 'ad_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6);
-      db.ref('ads/' + id).set({
+      sb('ads', { method: 'POST', body: { id, data: {
         title, text, link, image: image || '', position, slot,
         days: checkedDays.length === 7 ? [] : checkedDays, // tableau vide = tous les jours
         active: true,
-        createdAt: firebase.database.ServerValue.TIMESTAMP,
-      }).then(() => {
+        createdAt: Date.now(),
+      } }, headers: { Prefer: 'return=minimal' } }).then(() => {
+        loadAds();
         document.getElementById('adFormTitle').value = '';
         document.getElementById('adFormText').value = '';
         document.getElementById('adFormLink').value = '';
@@ -1657,12 +1692,6 @@
   }
   window.createAd = createAd;
 
-  if(db){
-    db.ref('ads').on('value', (snap) => {
-      allAds = snap.val() || {};
-      renderAds();
-    });
-  }
 
   // ================= Signalements de contenu (modération) =================
 let allReports = {}, allBans = {}, reportFilter = 'open';
@@ -1714,11 +1743,13 @@ function reportResolve(id, action){
   return db.ref('reports/' + id).update({ status: action === 'sans_suite' ? 'dismissed' : 'actioned', action, resolvedBy: repAdminUid(), resolvedAt: firebase.database.ServerValue.TIMESTAMP });
 }
 function reportBan(uid, reason, reportId){
-  return db.ref('bans/' + uid).set({ at: firebase.database.ServerValue.TIMESTAMP, reason: String(reason || 'autre').slice(0, 40), reportId: reportId || null, by: repAdminUid() });
+  const rec = { at: firebase.database.ServerValue.TIMESTAMP, reason: String(reason || 'autre').slice(0, 40), reportId: reportId || null, by: repAdminUid() };
+  return sb('bans?on_conflict=uid', { method: 'POST', body: { uid, at: Date.now(), reason: rec.reason, data: { reportId: rec.reportId, by: rec.by } }, headers: { Prefer: 'resolution=merge-duplicates,return=minimal' } })
+    .then(() => db.ref('bans/' + uid).set(rec));
 }
 function reportOpenVideo(id){
   const r = allReports[id]; if(!r || !r.reelId) return;
-  db.ref('reels/' + r.reelId).once('value').then((s) => { const v = s.val(); if(v && v.videoUrl) window.open(v.videoUrl, '_blank', 'noopener'); else alert('Cette vidéo n\'existe plus.'); });
+  sb('reels?select=video_url&id=eq.' + encodeURIComponent(r.reelId)).then((rows) => { const v = rows && rows[0]; if(v && v.video_url) window.open(v.video_url, '_blank', 'noopener'); else alert('Cette vidéo n\'existe plus.'); }).catch((e) => alert('Erreur : ' + e.message));
 }
 function reportRemoveContent(id, alsoBan){
   const r = allReports[id]; if(!r || r.status !== 'open') return;
@@ -1726,13 +1757,9 @@ function reportRemoveContent(id, alsoBan){
   if(!confirm('Supprimer ' + what + (alsoBan ? ' et suspendre le compte de son auteur' : '') + ' ?')) return;
   let removal;
   if(r.type === 'comment' && r.reelId && r.commentId){
-    removal = db.ref('reelComments/' + r.reelId + '/' + r.commentId).remove();
+    removal = sb('reel_comments?id=eq.' + encodeURIComponent(r.reelId + '__' + r.commentId), { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
   } else if(r.type === 'reel' && r.reelId){
-    removal = db.ref('reelComments/' + r.reelId).once('value').then((s) => {
-      const upd = { ['reels/' + r.reelId]: null, ['reelStats/' + r.reelId]: null };
-      Object.keys(s.val() || {}).forEach((cid) => { upd['reelComments/' + r.reelId + '/' + cid] = null; });
-      return db.ref().update(upd);
-    });
+    removal = sb('rpc/jl_delete_reel', { method: 'POST', body: { p_reel: r.reelId } });
   } else { removal = Promise.resolve(); }
   removal.then(() => (alsoBan && r.targetUid) ? reportBan(r.targetUid, r.reason, id) : null)
     .then(() => reportResolve(id, alsoBan ? 'contenu_supprime_et_compte_suspendu' : 'contenu_supprime'))
@@ -1744,7 +1771,7 @@ function reportBanOnly(id){
   reportBan(r.targetUid, r.reason, id).then(() => reportResolve(id, 'compte_suspendu')).catch((e) => alert('Erreur : ' + e.message));
 }
 function reportDismiss(id){ const r = allReports[id]; if(!r || r.status !== 'open') return; reportResolve(id, 'sans_suite').catch((e) => alert('Erreur : ' + e.message)); }
-function reportUnban(uid){ if(!confirm('Lever la suspension de ce compte ?')) return; db.ref('bans/' + uid).remove().catch((e) => alert('Erreur : ' + e.message)); }
+function reportUnban(uid){ if(!confirm('Lever la suspension de ce compte ?')) return; sb('bans?uid=eq.' + encodeURIComponent(uid), { method: 'DELETE', headers: { Prefer: 'return=minimal' } }).then(() => db.ref('bans/' + uid).remove()).catch((e) => alert('Erreur : ' + e.message)); }
 Object.assign(window, { reportOpenVideo, reportRemoveContent, reportBanOnly, reportDismiss, reportUnban });
 if(db){
   db.ref('reports').on('value', (snap) => { allReports = snap.val() || {}; renderReports(); });
@@ -1898,6 +1925,7 @@ if(db){ db.ref('presence').on('value', (snap) => { allPresence = snap.val() || {
       currentAdminUser = { id: user.uid, name: data.name || user.displayName || user.email, email: user.email, roles: getManagerRoles(data) };
       hideLogin();
       applyRoleRestrictions();
+      sbEnsureRole(user).then(() => { loadAds(); });
     });
   }
 
