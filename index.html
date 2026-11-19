@@ -2464,23 +2464,66 @@
   // ---- Connexion à Supabase avec le compte Firebase (Third-Party Auth) ----
   // Le serveur ajoute au compte le claim role='authenticated' (une seule fois par compte) ;
   // on rafraîchit alors le jeton pour qu'il le contienne. Silencieux : une erreur ici ne gêne jamais l'appli.
-  const jlSbRoleDone = {};
-  async function jlEnsureSupabaseRole(authApp, user){
-    try {
-      if(!user || jlSbRoleDone[user.uid]) return;
-      jlSbRoleDone[user.uid] = true;
-      const r = await serverCallable(authApp, 'supabaseRole')({});
-      if(r && r.data && r.data.changed) await user.getIdToken(true);
-    } catch(e){ delete jlSbRoleDone[user && user.uid]; }
+  const jlSbRoleP = {};
+  function jlEnsureSupabaseRole(authApp, user){
+    if(!user) return Promise.resolve(false);
+    if(jlSbRoleP[user.uid]) return jlSbRoleP[user.uid];
+    const p = (async () => {
+      try {
+        const r = await serverCallable(authApp, 'supabaseRole')({});
+        if(r && r.data && r.data.changed) await user.getIdToken(true);
+        return true;
+      } catch(e){ delete jlSbRoleP[user.uid]; return false; }
+    })();
+    jlSbRoleP[user.uid] = p;
+    return p;
   }
   // Appel REST à Supabase avec le jeton du compte connecté (ou la clé publique si personne).
+  // Pour un compte connecté, on attend d'abord que son droit "authenticated" soit en place.
   async function jlSbFetch(authApp, path, opts){
     const o = opts || {};
     const user = authApp && authApp.currentUser;
     let token = SUPABASE_KEY;
-    if(user){ try { token = await user.getIdToken(); } catch(e){} }
+    if(user){ await jlEnsureSupabaseRole(authApp, user); try { token = await user.getIdToken(); } catch(e){} }
     return fetch(SUPABASE_URL + '/rest/v1/' + path, Object.assign({}, o, { headers: Object.assign({ apikey: SUPABASE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, o.headers || {}) }));
   }
+
+  // ---- Catalogue (boutiques, produits, Reels, commentaires, stats, pubs, lieux) dans Supabase ----
+  const jlCat = {
+    async req(authApp, path, opts){
+      const o = Object.assign({}, opts || {}); if(o.body !== undefined && typeof o.body !== 'string') o.body = JSON.stringify(o.body);
+      const r = await jlSbFetch(authApp, path, o);
+      const txt = await r.text();
+      if(!r.ok){ let m = txt; try { m = JSON.parse(txt).message || txt; } catch(e){} throw Object.assign(new Error(m || ('Erreur ' + r.status)), { status: r.status }); }
+      return txt ? JSON.parse(txt) : null;
+    },
+    rpc(authApp, name, args){ return jlCat.req(authApp, 'rpc/' + name, { method: 'POST', body: args || {} }); },
+    shop: (r) => Object.assign({}, r.data, { approved: r.approved, status: r.status, createdAt: r.created_at }),
+    product: (r) => Object.assign({}, r.data, { shopId: r.shop_id, createdAt: r.created_at }),
+    reel: (r) => Object.assign({}, r.data, { shopId: r.shop_id, videoUrl: r.video_url, caption: r.caption, createdAt: r.created_at }),
+    reelStat: (r) => ({ viewCount: r.view_count || 0, productClicks: r.product_clicks || 0, commentCount: r.comment_count || 0, likeCount: r.like_count || 0, watchMs: r.watch_ms || 0 }),
+    productStat: (r) => ({ viewCount: r.view_count || 0, purchaseCount: r.purchase_count || 0 }),
+    byId(rows, key, f){ const o = {}; (rows || []).forEach((r) => { o[r[key]] = f(r); }); return o; },
+  };
+  // Sondage régulier (remplace les écouteurs temps réel de Firebase). Ne redessine que si les données ont changé.
+  const jlPollers = new Set();
+  function jlPoll(fn, ms){
+    const p = { stopped: false, busy: false, again: false, t: null, last: null };
+    p.run = async () => {
+      if(p.stopped || document.hidden) return;
+      if(p.busy){ p.again = true; return; }
+      p.busy = true;
+      try { await fn(p); } catch(e){ /* on garde les données précédentes et on réessaie au prochain passage */ }
+      p.busy = false;
+      if(p.again){ p.again = false; p.run(); }
+    };
+    p.changed = (v) => { const j = JSON.stringify(v); if(j === p.last) return false; p.last = j; return true; };
+    p.off = () => { p.stopped = true; clearInterval(p.t); jlPollers.delete(p); };
+    p.t = setInterval(p.run, ms); jlPollers.add(p); p.run();
+    return p;
+  }
+  function jlCatRefresh(){ jlPollers.forEach((p) => p.run()); }
+  document.addEventListener('visibilitychange', () => { if(!document.hidden) jlCatRefresh(); });
 
   // Même numéro, compte différent selon le rôle (une personne peut être
   // cliente ET livreur) : doit correspondre EXACTEMENT au mappage du
@@ -3249,6 +3292,7 @@
             ...profile, logoUrl: logoUrl || null, ownerIdUrl: ownerIdUrl || null, rccmUrl: rccmUrl || null,
             referredBy: referrerUid || null, referredAt: referrerUid ? referredAt : null,
           }),
+          jlSbRegisterShop(uid, profile, logoUrl, productId, prodName, prodPrice, productPhotoUrl),
           vendorDb.ref('shops/' + uid).set({
             name: profile.nom, category: profile.categorie, phone: profile.phone,
             address: profile.adresse, logoUrl: logoUrl || null,
@@ -3258,14 +3302,6 @@
             open: true, approved: false, status: 'pending',
           }),
         ];
-        if(productId){
-          writes.push(vendorDb.ref('products/' + productId).set({
-            name: prodName, price: prodPrice, stock: 1, icon: 'package',
-            bg: 'linear-gradient(135deg,#F1F0EC,#DAD7CC)', iconColor: '#0D0D0C',
-            photoUrl: productPhotoUrl || null, shopId: uid, category: profile.categorie,
-            createdAt: firebase.database.ServerValue.TIMESTAMP,
-          }));
-        }
         return Promise.all(writes).then(() => {
           if(referrerUid) serverCallable(vendorAuth, 'registerReferral')({ kind: 'shop' }).catch(() => {});
         });
@@ -3276,6 +3312,21 @@
     }).catch((e) => {
       alert("Erreur lors de l'enregistrement de votre inscription : " + e.message);
     });
+  }
+  // Boutique et premier produit dans le catalogue Supabase (la boutique y reste "en attente" tant que l'équipe ne l'a pas validée).
+  async function jlSbRegisterShop(uid, profile, logoUrl, productId, prodName, prodPrice, productPhotoUrl){
+    const now = Date.now();
+    await jlCat.req(vendorAuth, 'shops?on_conflict=id', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: {
+      id: uid, approved: false, status: 'pending', created_at: now, data: {
+        name: profile.nom, category: profile.categorie, phone: profile.phone, address: profile.adresse, logoUrl: logoUrl || null,
+        coords: window.shopLocCoords || null, hoursOpen: profile.hoursOpen, hoursClose: profile.hoursClose, open: true,
+      } } });
+    if(productId){
+      await jlCat.req(vendorAuth, 'products', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: { id: productId, shop_id: uid, created_at: now, data: {
+        name: prodName, price: prodPrice, stock: 1, icon: 'package', bg: 'linear-gradient(135deg,#F1F0EC,#DAD7CC)', iconColor: '#0D0D0C',
+        photoUrl: productPhotoUrl || null, shopId: uid, category: profile.categorie, createdAt: now,
+      } } });
+    }
   }
   window.submitBoutiqueRegistration = submitBoutiqueRegistration;
 
@@ -4320,10 +4371,10 @@
   }
   async function searchLocalPlaces(query){
     const k = jlNormPlace(query);
-    if(k.length < 2 || typeof firebase === 'undefined') return [];
-    const snap = await firebase.database().ref('places').orderByChild('k').startAt(k).endAt(k + '').limitToFirst(60).once('value');
+    if(k.length < 2) return [];
+    const rows = await jlCat.req(null, 'places?select=n,lat,lng,t&k=like.' + encodeURIComponent(k.replace(/[%_*]/g, ' ') + '*') + '&order=k.asc&limit=60');
     const ref = window.senderCoords || { lat: OUAGA_CENTER[0], lng: OUAGA_CENTER[1] };
-    const list = Object.values(snap.val() || {}).map((p) => ({
+    const list = (rows || []).map((p) => ({
       label: p.n, lat: p.lat, lon: p.lng, tag: p.t || 'Lieu',
       d: window.GeoUtils.haversineDistanceKm(ref.lat, ref.lng, p.lat, p.lng),
     }));
@@ -5561,32 +5612,24 @@
   }
 
   function loadRealShops(){
-    if(typeof firebase === 'undefined') return;
-    // Requête ciblée (et non une lecture brute du nœud entier) : c'est ce
-    // qui permet à la règle Firebase de n'autoriser que les boutiques
-    // dont approved === true, jamais celles encore en attente de
-    // validation par l'admin. Ne contient plus que les métadonnées de
-    // boutique — léger, et ne change que si une boutique elle-même change.
     offRef(realShopsQuery);
-    realShopsQuery = firebase.database().ref('shops').orderByChild('approved').equalTo(true);
-    realShopsQuery.on('value', (snap) => {
-      realShopsRaw = snap.val() || {};
-      rebuildCatalog();
-    });
+    realShopsQuery = jlPoll(async (p) => {
+      const rows = await jlCat.req(null, 'shops?select=*&approved=eq.true');
+      const m = jlCat.byId(rows, 'id', jlCat.shop);
+      if(!p.changed(m)) return;
+      realShopsRaw = m; rebuildCatalog();
+    }, 20000);
   }
 
   function loadRealProducts(){
-    if(typeof firebase === 'undefined') return;
-    // Plafonné : au-delà d'un certain nombre de produits, on ne charge que
-    // les plus récents pour le fil général — la page d'une boutique
-    // précise va chercher les siens séparément (voir openShop) et n'est
-    // donc jamais limitée par ce plafond.
+    // Plafonné aux 300 plus récents pour le fil général ; la page d'une boutique va chercher les siens (openShop).
     offRef(realProductsQuery);
-    realProductsQuery = firebase.database().ref('products').limitToLast(300);
-    realProductsQuery.on('value', (snap) => {
-      realProductsRaw = snap.val() || {};
-      rebuildCatalog();
-    });
+    realProductsQuery = jlPoll(async (p) => {
+      const rows = await jlCat.req(null, 'products?select=*&order=created_at.desc&limit=300');
+      const m = jlCat.byId(rows, 'id', jlCat.product);
+      if(!p.changed(m)) return;
+      realProductsRaw = m; rebuildCatalog();
+    }, 20000);
   }
 
   // ---- Reels (vidéos courtes publiées par les boutiques) ----
@@ -5596,12 +5639,13 @@
   let reelsObserver = null;
 
   function loadRealReels(){
-    if(typeof firebase === 'undefined' || realReelsQuery) return; // déjà abonné
-    realReelsQuery = firebase.database().ref('reels').limitToLast(60);
-    realReelsQuery.on('value', (snap) => {
-      realReelsRaw = snap.val() || {};
-      renderReelsFeed();
-    });
+    if(realReelsQuery) return; // déjà abonné
+    realReelsQuery = jlPoll(async (p) => {
+      const rows = await jlCat.req(null, 'reels?select=*&order=created_at.desc&limit=60');
+      const m = jlCat.byId(rows, 'id', jlCat.reel);
+      if(!p.changed(m)) return;
+      realReelsRaw = m; renderReelsFeed();
+    }, 20000);
     loadReelStats();
   }
 
@@ -5615,15 +5659,15 @@
   let reelStatsRaw = {};
   let realReelsStatsQuery = null;
   function loadReelStats(){
-    if(typeof firebase === 'undefined' || realReelsStatsQuery) return;
-    realReelsStatsQuery = firebase.database().ref('reelStats');
-    realReelsStatsQuery.on('value', (snap) => {
-      reelStatsRaw = snap.val() || {};
-      // Forcé : la liste des Reels ne change pas pour autant, mais les
-      // compteurs affichés (vues, likes, commentaires) doivent, eux, bien se
-      // mettre à jour — sans ce "true", le verrou anti-scintillement les gèlerait.
+    if(realReelsStatsQuery) return;
+    realReelsStatsQuery = jlPoll(async (p) => {
+      const rows = await jlCat.req(null, 'reel_stats?select=*');
+      const m = jlCat.byId(rows, 'reel_id', jlCat.reelStat);
+      if(!p.changed(m)) return;
+      reelStatsRaw = m;
+      // Forcé : la liste des Reels ne change pas pour autant, mais les compteurs affichés doivent se mettre à jour.
       renderReelsFeed(true);
-    });
+    }, 20000);
   }
   function reelScore(id, r){
     const s = reelStatsRaw[id] || {};
@@ -5650,31 +5694,34 @@
   let myReelLikes = {};
   let myReelLikesLoaded = false;
   function loadMyReelLikes(cb){
-    const user = typeof firebase !== 'undefined' && firebase.auth().currentUser;
+    const user = appAuth.currentUser;
     if(!user){ myReelLikes = {}; myReelLikesLoaded = true; if(cb) cb(); return; }
-    firebase.database().ref('reelLikes/' + user.uid).once('value').then((snap) => {
-      myReelLikes = snap.val() || {};
+    jlCat.req(appAuth, 'reel_likes?select=reel_id&uid=eq.' + encodeURIComponent(user.uid)).then((rows) => {
+      myReelLikes = {}; (rows || []).forEach((r) => { myReelLikes[r.reel_id] = true; });
       myReelLikesLoaded = true;
       if(cb) cb();
     }).catch(() => { myReelLikesLoaded = true; if(cb) cb(); });
   }
   function toggleReelLike(reelId){
-    const user = typeof firebase !== 'undefined' && firebase.auth().currentUser;
+    const user = appAuth.currentUser;
     if(!user){ requireClientAccount('aimer ce Reel', () => toggleReelLike(reelId)); return; }
     const wasLiked = !!myReelLikes[reelId];
     myReelLikes[reelId] = !wasLiked; // mise à jour immédiate à l'écran, sans attendre le serveur
+    const st = reelStatsRaw[reelId] || (reelStatsRaw[reelId] = {});
+    st.likeCount = Math.max(0, (st.likeCount || 0) + (wasLiked ? -1 : 1));
     renderReelsFeed(true);
-    firebase.database().ref('reelLikes/' + user.uid + '/' + reelId).set(!wasLiked);
-    firebase.database().ref('reelStats/' + reelId + '/likeCount').transaction((cur) => Math.max(0, (cur || 0) + (wasLiked ? -1 : 1)));
+    jlCat.rpc(appAuth, 'jl_toggle_like', { p_reel: reelId }).then(() => jlCatRefresh()).catch(() => {
+      myReelLikes[reelId] = wasLiked; st.likeCount = Math.max(0, (st.likeCount || 0) + (wasLiked ? 1 : -1)); renderReelsFeed(true);
+    });
   }
   window.toggleReelLike = toggleReelLike;
   // Compte une vue au plus une fois par Reel pendant cette session (évite de
   // gonfler le compteur à chaque petit va-et-vient dans le fil).
   const reelsViewedThisSession = new Set();
   function recordReelView(id){
-    if(!id || reelsViewedThisSession.has(id) || typeof firebase === 'undefined' || !firebase.auth().currentUser) return;
+    if(!id || reelsViewedThisSession.has(id) || !appAuth.currentUser) return;
     reelsViewedThisSession.add(id);
-    firebase.database().ref('reelStats/' + id + '/viewCount').transaction((cur) => (cur || 0) + 1);
+    jlCat.rpc(appAuth, 'jl_reel_stat', { p_reel: id, p_field: 'view_count' }).catch(() => {});
   }
 
   // ---- Temps de visionnage réel, et goûts de la personne ----
@@ -5690,7 +5737,7 @@
     const elapsed = Math.min(Date.now() - reelWatchStart[id], 5 * 60 * 1000); // plafonné : une minuterie oubliée ne doit jamais fausser massivement les chiffres
     delete reelWatchStart[id];
     if(elapsed < 1000) return; // un simple passage rapide n'en dit rien sur l'intérêt réel
-    firebase.database().ref('reelStats/' + id + '/watchMs').transaction((cur) => (cur || 0) + elapsed);
+    jlCat.rpc(appAuth, 'jl_reel_watch', { p_reel: id, p_ms: elapsed }).catch(() => {});
     const user = firebase.auth().currentUser;
     const r = realReelsRaw[id];
     const shop = r && shopsByKey[r.shopId];
@@ -6106,15 +6153,14 @@
   // "Voir le produit" qu'"Acheter" : les deux signalent un vrai intérêt pour
   // l'article, utile pour le classement — voir reelScore).
   function trackReelProductClick(reelId){
-    if(!reelId || typeof firebase === 'undefined') return;
-    if(firebase.auth().currentUser) firebase.database().ref('reelStats/' + reelId + '/productClicks').transaction((cur) => (cur || 0) + 1);
+    if(!reelId || !appAuth.currentUser) return;
+    jlCat.rpc(appAuth, 'jl_reel_stat', { p_reel: reelId, p_field: 'product_clicks' }).catch(() => {});
   }
   function openProductFromReel(key, reelId){
     trackReelProductClick(reelId);
     if(productsByKey[key]){ openProduct(key); return; }
-    if(typeof firebase === 'undefined') return;
-    firebase.database().ref('products/' + key).once('value').then((snap) => {
-      const p = snap.val();
+    jlCat.req(null, 'products?select=*&id=eq.' + encodeURIComponent(key)).then((rows) => {
+      const p = rows && rows[0] ? jlCat.product(rows[0]) : null;
       if(!p || !p.shopId || !shopsByKey[p.shopId]){ alert("Ce produit n'est plus disponible."); return; }
       productsByKey[key] = {
         key, shop: p.shopId, name: p.name || 'Produit', price: p.price || 0,
@@ -6192,9 +6238,15 @@
     openReelCommentsId = reelId;
     document.getElementById('reelCommentsOverlay').style.display = 'flex';
     document.querySelectorAll('#reelsFeed video').forEach((v) => v.pause()); // on met en pause pendant la lecture des commentaires
-    if(typeof firebase === 'undefined') return;
-    reelCommentsRef = firebase.database().ref('reelComments/' + reelId);
-    reelCommentsRef.on('value', renderReelComments);
+    if(reelCommentsRef) reelCommentsRef.off();
+    reelCommentsRef = jlPoll(async (p) => {
+      const rows = await jlCat.req(null, 'reel_comments?select=*&order=created_at.asc&reel_id=eq.' + encodeURIComponent(reelId));
+      if(openReelCommentsId !== reelId) return;
+      // Identifiant du commentaire = ce qui suit "<reel>__" (même forme qu'avant : c_xxxx)
+      const m = {}; (rows || []).forEach((r) => { m[String(r.id).slice(String(r.reel_id).length + 2)] = { uid: r.uid, name: r.name, text: r.text, createdAt: r.created_at }; });
+      if(!p.changed(m)) return;
+      renderReelComments({ val: () => m });
+    }, 8000);
   }
   window.openReelComments = openReelComments;
 
@@ -6231,16 +6283,17 @@
   function postReelComment(){
     const input = document.getElementById('reelCommentInput');
     const text = input && input.value.trim();
-    if(!text || !openReelCommentsId || typeof firebase === 'undefined') return;
-    const user = firebase.auth().currentUser;
+    if(!text || !openReelCommentsId) return;
+    const user = appAuth.currentUser;
     if(!user){ requireClientAccount('commenter', null); return; }
+    const reelId = openReelCommentsId;
     const commentId = 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     const name = (window.currentAppUser && window.currentAppUser.name) || 'Client Je Livre';
-    firebase.database().ref('reelComments/' + openReelCommentsId + '/' + commentId).set({
-      uid: user.uid, name, text, createdAt: firebase.database.ServerValue.TIMESTAMP,
-    }).then(() => {
+    jlCat.req(appAuth, 'reel_comments', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: {
+      id: reelId + '__' + commentId, reel_id: reelId, uid: user.uid, name: String(name).slice(0, 60), text: text.slice(0, 300), created_at: Date.now(),
+    } }).then(() => {
       input.value = '';
-      firebase.database().ref('reelStats/' + openReelCommentsId + '/commentCount').transaction((cur) => (cur || 0) + 1);
+      jlCatRefresh();
     }).catch((e) => alert('Erreur : ' + e.message));
   }
   window.postReelComment = postReelComment;
@@ -6585,12 +6638,13 @@
   let productStatsRaw = {};
   let productStatsQuery = null;
   function loadProductStats(){
-    if(typeof firebase === 'undefined' || productStatsQuery) return;
-    productStatsQuery = firebase.database().ref('productStats');
-    productStatsQuery.on('value', (snap) => {
-      productStatsRaw = snap.val() || {};
-      renderRecommendedRow();
-    });
+    if(productStatsQuery) return;
+    productStatsQuery = jlPoll(async (p) => {
+      const rows = await jlCat.req(null, 'product_stats?select=*');
+      const m = jlCat.byId(rows, 'product_key', jlCat.productStat);
+      if(!p.changed(m)) return;
+      productStatsRaw = m; renderRecommendedRow();
+    }, 20000);
   }
   function productPopularityScore(key){
     const s = productStatsRaw[key] || {};
@@ -6724,14 +6778,14 @@
   }
 
   function loadRealAds(){
-    if(typeof firebase === 'undefined') return;
     offRef(realAdsRef);
-    realAdsRef = firebase.database().ref('ads');
-    realAdsRef.on('value', (snap) => {
-      allAdsReal = Object.values(snap.val() || {}).filter((a) => a && a.active !== false);
+    realAdsRef = jlPoll(async (p) => {
+      const rows = await jlCat.req(null, 'ads?select=id,data');
+      if(!p.changed(rows)) return;
+      allAdsReal = (rows || []).map((r) => r.data).filter((a) => a && a.active !== false);
       renderProducts();
       renderHomeBanner();
-    });
+    }, 60000);
     if(!window.adSlotWatcher){
       let lastSlot = currentAdSlot();
       window.adSlotWatcher = setInterval(() => {
@@ -6856,9 +6910,9 @@
   // Une seule vue comptée par produit et par session (même principe que les Reels).
   const productsViewedThisSession = new Set();
   function recordProductView(key){
-    if(!key || productsViewedThisSession.has(key) || typeof firebase === 'undefined') return;
+    if(!key || productsViewedThisSession.has(key) || !appAuth.currentUser) return;
     productsViewedThisSession.add(key);
-    firebase.database().ref('productStats/' + key + '/viewCount').transaction((cur) => (cur || 0) + 1);
+    jlCat.rpc(appAuth, 'jl_product_stat', { p_key: key, p_field: 'view_count' }).catch(() => {});
   }
 
   function openProduct(key){
@@ -6942,9 +6996,9 @@
     renderShopPage(key);
     go('shop');
     const s = shopsByKey[key];
-    if(s && !s.isDemo && typeof firebase !== 'undefined'){
-      firebase.database().ref('products').orderByChild('shopId').equalTo(key).once('value').then((snap) => {
-        Object.entries(snap.val() || {}).forEach(([pid, p]) => {
+    if(s && !s.isDemo){
+      jlCat.req(null, 'products?select=*&shop_id=eq.' + encodeURIComponent(key)).then((rows) => {
+        Object.entries(jlCat.byId(rows, 'id', jlCat.product)).forEach(([pid, p]) => {
           if(!p) return;
           productsByKey[pid] = {
             key: pid, shop: p.shopId, name: p.name || 'Produit', price: p.price || 0,
@@ -7875,7 +7929,10 @@
     const off = sw.classList.contains('off');
     label.textContent = off ? 'Boutique fermée' : 'Boutique ouverte';
     dot.style.background = off ? '#B9B7B0' : '#3EAF4C';
-    if(window.currentVendorUser) vendorDb.ref('shops/' + window.currentVendorUser.uid).update({ open: !off });
+    if(window.currentVendorUser){
+      vendorDb.ref('shops/' + window.currentVendorUser.uid).update({ open: !off });
+      jlCat.rpc(vendorAuth, 'jl_shop_set', { p_patch: { open: !off } }).then(() => jlCatRefresh()).catch((e) => alert('Erreur : ' + e.message));
+    }
   }
 
   let shopProductsRef = null;
@@ -7883,11 +7940,14 @@
     const el = document.getElementById('shopProductList');
     if(!el || !window.currentVendorUser) return;
     if(shopProductsRef) return; // déjà abonné
-    shopProductsRef = vendorDb.ref('products').orderByChild('shopId').equalTo(window.currentVendorUser.uid);
-    shopProductsRef.on('value', (snap) => {
-      myShopProductsCache = snap.val() || {};
+    const uid = window.currentVendorUser.uid;
+    shopProductsRef = jlPoll(async (p) => {
+      const rows = await jlCat.req(vendorAuth, 'products?select=*&order=created_at.desc&shop_id=eq.' + encodeURIComponent(uid));
+      const m = jlCat.byId(rows, 'id', jlCat.product);
+      if(!p.changed(m)) return;
+      myShopProductsCache = m;
       renderShopProducts();
-    });
+    }, 15000);
   }
 
   function renderShopProducts(){
@@ -7909,7 +7969,8 @@
   function deleteShopProduct(productId){
     if(!window.currentVendorUser) return;
     if(!confirm('Supprimer ce produit de votre boutique ?')) return;
-    vendorDb.ref('products/' + productId).remove()
+    jlCat.req(vendorAuth, 'products?id=eq.' + encodeURIComponent(productId), { method: 'DELETE', headers: { Prefer: 'return=minimal' } })
+      .then(() => jlCatRefresh())
       .catch((e) => alert('Erreur : ' + e.message));
   }
 
@@ -7922,13 +7983,14 @@
     const uid = window.currentVendorUser.uid;
     const productId = 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
     uploadPendingFile('newProdPhoto').then((photoUrl) => {
-      return vendorDb.ref('products/' + productId).set({
+      const createdAt = Date.now();
+      return jlCat.req(vendorAuth, 'products', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: { id: productId, shop_id: uid, created_at: createdAt, data: {
         name, price, desc: desc || null, stock: isNaN(stock) ? 10 : stock,
         icon: 'package', bg: 'linear-gradient(135deg,#F1F0EC,#DAD7CC)', iconColor: '#0D0D0C',
-        photoUrl: photoUrl || null, shopId: uid, category: window.currentVendorUser.category || '—',
-        createdAt: firebase.database.ServerValue.TIMESTAMP,
-      });
+        photoUrl: photoUrl || null, shopId: uid, category: window.currentVendorUser.category || '—', createdAt,
+      } } });
     }).then(() => {
+      jlCatRefresh();
       document.getElementById('newProdName').value = '';
       document.getElementById('newProdPrice').value = '';
       document.getElementById('newProdStock').value = '10';
@@ -7945,11 +8007,14 @@
     const el = document.getElementById('shopReelList');
     if(!el || !window.currentVendorUser) return;
     if(shopReelsRef) return; // déjà abonné
-    shopReelsRef = vendorDb.ref('reels').orderByChild('shopId').equalTo(window.currentVendorUser.uid);
-    shopReelsRef.on('value', (snap) => {
-      myShopReelsCache = snap.val() || {};
+    const uid = window.currentVendorUser.uid;
+    shopReelsRef = jlPoll(async (p) => {
+      const rows = await jlCat.req(vendorAuth, 'reels?select=*&order=created_at.desc&shop_id=eq.' + encodeURIComponent(uid));
+      const m = jlCat.byId(rows, 'id', jlCat.reel);
+      if(!p.changed(m)) return;
+      myShopReelsCache = m;
       renderShopReels();
-    });
+    }, 15000);
   }
 
   function renderShopReels(){
@@ -7972,7 +8037,7 @@
   function deleteShopReel(reelId){
     if(!window.currentVendorUser) return;
     if(!confirm('Supprimer ce Reel ?')) return;
-    vendorDb.ref('reels/' + reelId).remove().catch((e) => alert('Erreur : ' + e.message));
+    jlCat.rpc(vendorAuth, 'jl_delete_reel', { p_reel: reelId }).then(() => jlCatRefresh()).catch((e) => alert('Erreur : ' + e.message));
   }
   window.deleteShopReel = deleteShopReel;
 
@@ -7998,12 +8063,12 @@
     if(btn){ btn.disabled = true; btn.textContent = 'Publication…'; }
     uploadPendingFile('newReelVideo').then((videoUrl) => {
       if(!videoUrl) throw new Error('Envoi de la vidéo impossible.');
-      return vendorDb.ref('reels/' + reelId).set({
-        shopId: uid, shopName: window.currentVendorUser.name || null,
-        videoUrl, caption: caption || null, productKey: productKey || null,
-        createdAt: firebase.database.ServerValue.TIMESTAMP,
-      });
+      return jlCat.req(vendorAuth, 'reels', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: {
+        id: reelId, shop_id: uid, video_url: videoUrl, caption: caption ? caption.slice(0, 299) : null, created_at: Date.now(),
+        data: { shopName: window.currentVendorUser.name || null, productKey: productKey || null },
+      } });
     }).then(() => {
+      jlCatRefresh();
       document.getElementById('newReelCaption').value = '';
       document.getElementById('newReelProduct').value = '';
       resetUploadBoxByKey('newReelVideo');
@@ -8671,7 +8736,7 @@
         }
         (cached.items || []).forEach((it) => {
           if(!it.pid) return;
-          firebase.database().ref('productStats/' + it.pid + '/purchaseCount').transaction((cur) => (cur || 0) + (it.qty || 1));
+          for(let k = 0; k < Math.min(it.qty || 1, 10); k++) jlCat.rpc(appAuth, 'jl_product_stat', { p_key: it.pid, p_field: 'purchase_count' }).catch(() => {});
         });
         renderMyOrders();
       });
@@ -9164,11 +9229,22 @@ window.jlOpenLegal = jlOpenLegal; window.jlCloseModal = jlCloseModal;
 function jlHasTerms(auth, db){
   const u = auth.currentUser; if(!u) return Promise.resolve(false);
   if(window.__jlTermsOk[u.uid]) return Promise.resolve(true);
-  return db.ref('termsAcceptances/' + u.uid).once('value').then((s) => { if(s.exists()) window.__jlTermsOk[u.uid] = true; return s.exists(); }).catch(() => false);
+  return db.ref('termsAcceptances/' + u.uid).once('value').then((s) => {
+    if(s.exists()){ window.__jlTermsOk[u.uid] = true; jlSbTerms(auth, s.val()); }
+    return s.exists();
+  }).catch(() => false);
 }
 function jlRecordTerms(auth, db){
   const u = auth.currentUser; if(!u) return Promise.resolve();
-  return db.ref('termsAcceptances/' + u.uid).set({ version: JL_TERMS_VERSION, acceptedAt: jlTs() }).then(() => { window.__jlTermsOk[u.uid] = true; });
+  return db.ref('termsAcceptances/' + u.uid).set({ version: JL_TERMS_VERSION, acceptedAt: jlTs() }).then(() => { window.__jlTermsOk[u.uid] = true; return jlSbTerms(auth, { version: JL_TERMS_VERSION }, true); });
+}
+// Supabase refuse les Reels/commentaires sans acceptation enregistrée : on y inscrit la même acceptation (une seule fois par compte et par session).
+const jlSbTermsDone = {};
+function jlSbTerms(auth, data, strict){
+  const u = auth.currentUser; if(!u || jlSbTermsDone[u.uid]) return Promise.resolve();
+  const p = jlCat.req(auth, 'terms_acceptances?on_conflict=uid', { method: 'POST', headers: { Prefer: 'resolution=ignore-duplicates,return=minimal' }, body: { uid: u.uid, at: Date.now(), data: { version: (data && data.version) || JL_TERMS_VERSION } } })
+    .then(() => { jlSbTermsDone[u.uid] = true; });
+  return strict ? p : p.catch(() => {});
 }
 function jlEnsureTerms(auth, db){
   return jlHasTerms(auth, db).then((ok) => {
