@@ -225,6 +225,11 @@
     <div class="panel" id="platformPanel">
       <div class="panel-head"><h2>Vue d'ensemble de la plateforme</h2><span class="sub" id="platformUpdated">—</span><button class="rep-btn" style="margin-left:auto" onclick="refreshPlatformStats()">Actualiser</button></div>
       <div class="plat-error" id="platformError" style="display:none"></div>
+      <div id="archiveBox" style="margin:12px 0;padding:12px;border:1px dashed #bbb;border-radius:10px">
+        <b>Migration Supabase</b> — copie de sécurité de toutes les données Firebase.
+        <button class="btn" id="archiveBtn" onclick="runArchive()" style="margin-left:8px">Copier vers Supabase</button>
+        <div id="archiveOut" style="margin-top:8px;font-size:13px;white-space:pre-wrap"></div>
+      </div>
       <h3 class="plat-h">Personnes inscrites</h3><div class="kpi-grid" id="peopleGrid"></div>
       <h3 class="plat-h">En ligne en ce moment</h3><div class="kpi-grid" id="onlineGrid"></div>
       <h3 class="plat-h">Argent</h3><div class="kpi-grid" id="moneyGrid"></div>
@@ -1822,6 +1827,20 @@ function platformOnReady(){
   if(!window.__platTimer) window.__platTimer = setInterval(() => { const pg = document.getElementById('page-overview'); if(pg && pg.classList.contains('active')) refreshPlatformStats(); }, 60000);
 }
 window.refreshPlatformStats = refreshPlatformStats;
+async function runArchive(){
+  const out = document.getElementById('archiveOut'), btn = document.getElementById('archiveBtn');
+  if(!auth || !auth.currentUser){ out.textContent = 'Connectez-vous d\'abord.'; return; }
+  btn.disabled = true; out.textContent = 'Copie en cours…';
+  try {
+    const token = await auth.currentUser.getIdToken();
+    const res = await fetch(SERVER_BASE_URL + '/api/adminArchive', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token }, body: '{}' });
+    const body = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error(body.message || 'Échec de la copie.');
+    out.textContent = 'Terminé :\n' + Object.keys(body.counts).map(k => k + ' : ' + body.counts[k]).join('\n');
+  } catch(e){ out.textContent = 'Erreur : ' + e.message; }
+  btn.disabled = false;
+}
+window.runArchive = runArchive;
 platCards('peopleGrid', PLAT_PEOPLE); platCards('onlineGrid', PLAT_ONLINE); platCards('moneyGrid', PLAT_MONEY);
 if(db){ db.ref('presence').on('value', (snap) => { allPresence = snap.val() || {}; renderPresence(); }, () => {}); }
 
