@@ -2484,7 +2484,7 @@
     const o = opts || {};
     const user = authApp && authApp.currentUser;
     let token = SUPABASE_KEY;
-    if(user){ await jlEnsureSupabaseRole(authApp, user); try { token = await user.getIdToken(); } catch(e){} }
+    if(user){ await jlEnsureSupabaseRole(authApp, user); try { token = await user.getIdToken(); jlDbTokens.set(authApp, token); } catch(e){} }
     return fetch(SUPABASE_URL + '/rest/v1/' + path, Object.assign({}, o, { headers: Object.assign({ apikey: SUPABASE_KEY, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' }, o.headers || {}) }));
   }
 
@@ -2524,6 +2524,211 @@
   }
   function jlCatRefresh(){ jlPollers.forEach((p) => p.run()); }
   document.addEventListener('visibilitychange', () => { if(!document.hidden) jlCatRefresh(); });
+
+  // ================= Profils, livreurs, entreprises, inscriptions dans Supabase =================
+  // Couche de compatibilité « façon Firebase » : le reste du code continue d'écrire ref('users/..').set(..), .update(..), .transaction(..), .on('value', ..)
+  // mais ces nœuds-là sont lus/écrits dans Supabase. Tous les autres nœuds restent sur Firebase pour l'instant.
+  // JL_DB_SUPABASE = false : retour arrière d'urgence (tout redevient Firebase).
+  const JL_DB_SUPABASE = true;
+  const JL_DB_NODES = { users: 'profiles', drivers: 'drivers', driverPublic: 'driver_public', enterprises: 'enterprises', registrations: 'registrations', userAffinity: 'user_affinity' };
+  const JL_DB_POLL_MS = 4000;
+  const JL_DB_STOP_ON_ERROR = false;   // admin : true (les écouteurs refusés sont relancés par la page)
+  const jlDbTokens = new Map();      // dernier jeton de chaque compte (pour l'écriture de fin de session)
+  const jlDbDisconnect = [];          // actions « à la déconnexion » : exécutées quand l'appli se ferme
+  function jlDbClean(v){
+    if(v === undefined || v === null) return null;
+    if(typeof v === 'object'){
+      const o = Array.isArray(v) ? [] : {}; let n = 0;
+      Object.keys(v).forEach((k) => { const c = jlDbClean(v[k]); if(c !== null){ o[k] = c; n++; } });
+      return n ? o : null;
+    }
+    return v;
+  }
+  function jlDbValue(v){            // résout firebase.database.ServerValue.TIMESTAMP
+    if(v && typeof v === 'object'){
+      if(v['.sv'] === 'timestamp') return Date.now();
+      const o = Array.isArray(v) ? [] : {}; Object.keys(v).forEach((k) => { o[k] = jlDbValue(v[k]); }); return o;
+    }
+    return v;
+  }
+  function jlDbGetAt(o, p){ let c = o; for(const k of p){ if(c && typeof c === 'object' && k in c) c = c[k]; else return null; } return c === undefined ? null : c; }
+  function jlDbSnap(key, val){
+    const v = val === undefined ? null : val;
+    return { key, val: () => v, exists: () => v !== null, exportVal: () => v,
+      child: (k) => jlDbSnap(String(k).split('/').pop(), jlDbGetAt(v, String(k).split('/').filter(Boolean))),
+      forEach(cb){ if(v && typeof v === 'object'){ for(const k of Object.keys(v)){ if(cb(jlDbSnap(k, v[k])) === true) return true; } } return false; },
+      numChildren: () => (v && typeof v === 'object' ? Object.keys(v).length : 0) };
+  }
+  function jlDbPushId(){
+    const ch = '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_abcdefghijklmnopqrstuvwxyz'; let t = Date.now(), id = '';
+    for(let i = 0; i < 8; i++){ id = ch.charAt(t % 64) + id; t = Math.floor(t / 64); }
+    for(let i = 0; i < 12; i++) id += ch.charAt(Math.floor(Math.random() * 64));
+    return id;
+  }
+  function jlDbErr(e){ if(e && (e.status === 401 || e.status === 403)) e.code = 'PERMISSION_DENIED'; return e; }
+  const jlDbPollers = {};
+  async function jlDbReq(authApp, path, opts){ try { return await jlCat.req(authApp, path, opts); } catch(e){ throw jlDbErr(e); } }
+
+  function jlDbRef(authApp, table, segs, filt, label){
+    const id = segs[0], sub = segs.slice(1), key = segs.length ? segs[segs.length - 1] : label;
+    const write = (path, value, mode, expect, check) => jlDbReq(authApp, 'rpc/jl_rec_write', { method: 'POST', body: { p_table: table, p_id: id, p_path: path, p_value: value === undefined ? null : value, p_mode: mode, p_expect: expect === undefined ? null : expect, p_check: !!check } });
+    const load = async () => {
+      const rows = await jlDbReq(authApp, table + '?select=data&id=eq.' + encodeURIComponent(id));
+      return Array.isArray(rows) && rows[0] ? rows[0].data : null;
+    };
+    const ref = {
+      key,
+      path: [label].concat(segs).join('/'),
+      child: (k) => jlDbRef(authApp, table, segs.concat(String(k).split('/').filter(Boolean)), null, label),
+      orderByChild: (c) => jlDbRef(authApp, table, segs, Object.assign({}, filt, { child: c }), label),
+      equalTo: (v) => jlDbRef(authApp, table, segs, Object.assign({}, filt, { equal: v }), label),
+      limitToLast: (n) => jlDbRef(authApp, table, segs, Object.assign({}, filt, { last: n }), label),
+      async once(){
+        if(!segs.length){
+          let q = table + '?select=id,data';
+          if(filt && filt.child && filt.equal !== undefined && filt.child.indexOf('/') < 0 && typeof filt.equal === 'string') q += '&data->>' + encodeURIComponent(filt.child) + '=eq.' + encodeURIComponent(filt.equal);
+          const rows = await jlDbReq(authApp, q);
+          let keys = (rows || []).map((r) => r.id); const obj = {}; (rows || []).forEach((r) => { obj[r.id] = r.data; });
+          if(filt && filt.child){
+            const p = filt.child.split('/');
+            if(filt.equal !== undefined) keys = keys.filter((k) => JSON.stringify(jlDbGetAt(obj[k], p)) === JSON.stringify(filt.equal));
+            keys.sort((a, b) => { const x = jlDbGetAt(obj[a], p), y = jlDbGetAt(obj[b], p); return x < y ? -1 : x > y ? 1 : 0; });
+            if(filt.last) keys = keys.slice(-filt.last);
+          }
+          const out = {}; keys.forEach((k) => { out[k] = obj[k]; });
+          return jlDbSnap(key, keys.length ? out : null);
+        }
+        const data = await load();
+        return jlDbSnap(key, data === null ? null : jlDbGetAt(data, sub));
+      },
+      on(evt, cb, errCb){
+        if(evt !== 'value') return cb;
+        const pk = ref.path + '|' + JSON.stringify(filt || {});
+        const p = jlPoll(async (pp) => {
+          try { const s = await ref.once(); if(pp.changed(s.val())) cb(s); }
+          catch(e){ if(JL_DB_STOP_ON_ERROR) pp.off(); if(errCb) errCb(jlDbErr(e)); }
+        }, JL_DB_POLL_MS);
+        (jlDbPollers[pk] = jlDbPollers[pk] || []).push({ cb, p });
+        return cb;
+      },
+      off(evt, cb){
+        const pk = ref.path + '|' + JSON.stringify(filt || {});
+        const list = jlDbPollers[pk] || [];
+        jlDbPollers[pk] = list.filter((x) => { if(cb && x.cb !== cb) return true; x.p.off(); return false; });
+      },
+      async set(v){
+        const cv = jlDbClean(jlDbValue(v));
+        if(!segs.length) throw new Error('écriture sur tout un nœud interdite');
+        if(!sub.length && cv === null){ await jlDbReq(authApp, table + '?id=eq.' + encodeURIComponent(id), { method: 'DELETE' }); return; }
+        await write(sub, cv, 'set');
+      },
+      remove(){ return ref.set(null); },
+      async update(patch){
+        if(!segs.length) throw new Error('écriture sur tout un nœud interdite');
+        const keys = Object.keys(patch || {}); const val = jlDbValue(patch);
+        if(table === 'drivers' && sub.length === 0 && keys.length === 1 && keys[0] === 'enterpriseId' && patch.enterpriseId === null){   // l'entreprise retire un livreur de sa flotte
+          await jlDbReq(authApp, 'rpc/jl_driver_release', { method: 'POST', body: { p_id: id } }); return;
+        }
+        const incKeys = keys.filter((k) => val[k] && typeof val[k] === 'object' && val[k]['.sv'] && val[k]['.sv'].increment !== undefined);
+        if(incKeys.length){   // ServerValue.increment : lecture + écriture protégée contre les conflits
+          for(const k of incKeys){ const n = Number(val[k]['.sv'].increment) || 0; await ref.child(k).transaction((c) => (typeof c === 'number' ? c : 0) + n); }
+          const rest = {}; keys.forEach((k) => { if(incKeys.indexOf(k) < 0) rest[k] = patch[k]; });
+          if(Object.keys(rest).length) await ref.update(rest);
+          return;
+        }
+        if(keys.every((k) => k.indexOf('/') < 0)){ const pv = {}; keys.forEach((k) => { pv[k] = jlDbClean(val[k]); }); await write(sub, pv, 'merge'); return; }
+        for(const k of keys) await write(sub.concat(k.split('/').filter(Boolean)), jlDbClean(val[k]), 'set');
+      },
+      push(v){
+        const r = jlDbRef(authApp, table, segs.concat([jlDbPushId()]), null, label);
+        const p = v === undefined ? Promise.resolve() : r.set(v);
+        const plain = Object.assign({}, r);
+        r.then = (a, b) => p.then(() => a(plain), b); r.catch = (b) => p.catch(b);
+        return r;
+      },
+      async transaction(fn){
+        for(let i = 0; i < 8; i++){
+          const data = await load(); const cur = data === null ? null : jlDbGetAt(data, sub);
+          const nv = fn(cur);
+          if(nv === undefined) return { committed: false, snapshot: jlDbSnap(key, cur) };
+          const cv = jlDbClean(jlDbValue(nv));
+          if(await write(sub, cv, 'set', cur, true) === true) return { committed: true, snapshot: jlDbSnap(key, cv) };
+        }
+        throw new Error('Trop de modifications en même temps, réessayez.');
+      },
+      onDisconnect(){
+        const reg = (patch, mode) => {
+          jlDbDisconnect.push({ authApp, body: { p_table: table, p_id: id, p_path: sub, p_value: patch, p_mode: mode, p_expect: null, p_check: false } });
+          return Promise.resolve();
+        };
+        return { update: (patch) => reg(jlDbClean(patch) || {}, 'merge'), set: (v) => reg(jlDbClean(v), 'set'), remove: () => reg(null, 'set'), cancel: () => Promise.resolve() };
+      },
+    };
+    return ref;
+  }
+
+  // Présence en ligne (nœud presence/<rôle>/<uid>) : une ligne par rôle et compte
+  function jlDbPresence(authApp, segs){
+    const role = segs[0], uid = segs[1];
+    const rs = { key: uid || role, path: 'presence/' + segs.join('/'),
+      async once(){
+        const rows = await jlDbReq(authApp, 'presence?select=role,uid,at'); const o = {};
+        (rows || []).forEach((r) => { (o[r.role] = o[r.role] || {})[r.uid] = { at: r.at }; });
+        const v = !segs.length ? o : (role && !uid ? o[role] || null : (o[role] || {})[uid] || null);
+        return jlDbSnap(rs.key, v && Object.keys(v).length ? v : null);
+      },
+      on(evt, cb, errCb){ const p = jlPoll(async (pp) => { try { const s = await rs.once(); if(pp.changed(s.val())) cb(s); } catch(e){ if(errCb) errCb(jlDbErr(e)); } }, JL_DB_POLL_MS); (rs._p = rs._p || []).push(p); return cb; },
+      off(){ (rs._p || []).forEach((p) => p.off()); },
+      set(){ return jlDbReq(authApp, 'rpc/jl_presence_set', { method: 'POST', body: { p_role: role } }); },
+      remove(){ return jlDbReq(authApp, 'rpc/jl_presence_clear', { method: 'POST', body: { p_role: role } }); },
+      onDisconnect(){
+        const reg = () => { jlDbDisconnect.push({ authApp, rpc: 'jl_presence_clear', body: { p_role: role } }); return Promise.resolve(); };
+        return { remove: reg, set: reg, update: reg, cancel: () => Promise.resolve() };
+      },
+    };
+    return rs;
+  }
+  // Codes de parrainage : lecture publique, création unique
+  function jlDbRefCode(authApp, code){
+    const rs = { key: code, path: 'referralCodes/' + code,
+      async once(){ const rows = await jlDbReq(authApp, 'referral_codes?select=uid&code=eq.' + encodeURIComponent(code)); return jlDbSnap(code, rows && rows[0] ? rows[0].uid : null); },
+      async set(uid){ await jlDbReq(authApp, 'referral_codes', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: { code, uid } }); },
+      on(){ }, off(){ }, remove(){ return Promise.resolve(); } };
+    return rs;
+  }
+  // À la fermeture de l'appli : exécute les « à la déconnexion » (livreur hors ligne, présence retirée)
+  function jlDbFlush(){
+    while(jlDbDisconnect.length){
+      const d = jlDbDisconnect.shift(); const tok = jlDbTokens.get(d.authApp); if(!tok) continue;
+      try { fetch(SUPABASE_URL + '/rest/v1/rpc/' + (d.rpc || 'jl_rec_write'), { method: 'POST', keepalive: true, headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + tok, 'Content-Type': 'application/json' }, body: JSON.stringify(d.body) }); } catch(e){}
+    }
+  }
+  window.addEventListener('pagehide', jlDbFlush);
+
+  function jlWrapDb(authApp, realDb){
+    if(!JL_DB_SUPABASE || !realDb) return realDb;
+    const w = Object.create(realDb);
+    w.ref = function(path){
+      const segs = String(path === undefined ? '' : path).split('/').filter(Boolean);
+      const node = segs[0];
+      if(node === 'presence' && segs.length >= 1) return jlDbPresence(authApp, segs.slice(1));
+      if(node === 'referralCodes' && segs.length === 2) return jlDbRefCode(authApp, segs[1]);
+      const table = JL_DB_NODES[node];
+      if(!table) return realDb.ref(path);
+      return jlDbRef(authApp, table, segs.slice(1), null, node);
+    };
+    return w;
+  }
+  // Le compte « par défaut » (client) et chaque compte de rôle passent par la couche
+  const jlRealDatabaseFn = firebase.database;
+  const jlDefaultDb = function(){ return jlWrapDb(appAuth, jlRealDatabaseFn.apply(firebase, arguments)); };
+  Object.getOwnPropertyNames(jlRealDatabaseFn).forEach((k) => { if(['length','name','prototype','arguments','caller'].indexOf(k) < 0){ try { jlDefaultDb[k] = jlRealDatabaseFn[k]; } catch(e){} } });
+  firebase.database = jlDefaultDb;
+  function jlHookDb(app, authApp){
+    const orig = app.database.bind(app); let w = null;
+    app.database = function(){ return w || (w = jlWrapDb(authApp, orig())); };
+    return app;
+  }
 
   // Même numéro, compte différent selon le rôle (une personne peut être
   // cliente ET livreur) : doit correspondre EXACTEMENT au mappage du
@@ -3152,11 +3357,13 @@
   // vérification Firebase, gratuite, sans dépendre du SMS payant).
   const driverApp = firebase.initializeApp(firebaseConfig, 'driver-app');
   const driverAuth = driverApp.auth();
+  jlHookDb(driverApp, driverAuth);
   const driverDb = driverApp.database();
 
   // ================= Compte VENDEUR / BOUTIQUE (même principe que le compte livreur) =================
   const vendorApp = firebase.initializeApp(firebaseConfig, 'vendor-app');
   const vendorAuth = vendorApp.auth();
+  jlHookDb(vendorApp, vendorAuth);
   const vendorDb = vendorApp.database();
   window.currentVendorUser = null; // { uid, name, category, phone }
   let pendingVendorSignup = null;
@@ -3482,6 +3689,7 @@
   // ================= Compte ENTREPRISE (même principe que livreur/boutique) =================
   const entrepriseApp = firebase.initializeApp(firebaseConfig, 'entreprise-app');
   const entrepriseAuth = entrepriseApp.auth();
+  jlHookDb(entrepriseApp, entrepriseAuth);
   const entrepriseDb = entrepriseApp.database();
   window.currentEntrepriseUser = null; // { uid, name, phone, fleetCapacity }
   let pendingEntrepriseSignup = null;
@@ -5342,6 +5550,7 @@
     // Compte créé via une instance Firebase temporaire, pour ne pas
     // déconnecter la session de l'entreprise pendant l'opération.
     const tempApp = firebase.initializeApp(firebaseConfig, 'temp-fleet-' + Date.now());
+    jlHookDb(tempApp, tempApp.auth());
     tempApp.auth().createUserWithEmailAndPassword(roleEmail(phone, 'driver'), password).then((cred) => cred.user.uid).then((uid) => {
       return tempApp.database().ref('drivers/' + uid).update({
         name, phone, vehicle,
