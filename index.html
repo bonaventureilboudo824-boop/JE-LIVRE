@@ -2530,7 +2530,7 @@
   // mais ces nœuds-là sont lus/écrits dans Supabase. Tous les autres nœuds restent sur Firebase pour l'instant.
   // JL_DB_SUPABASE = false : retour arrière d'urgence (tout redevient Firebase).
   const JL_DB_SUPABASE = true;
-  const JL_DB_NODES = { users: 'profiles', drivers: 'drivers', driverPublic: 'driver_public', enterprises: 'enterprises', registrations: 'registrations', userAffinity: 'user_affinity', deliveryRequests: 'delivery_requests', marketplaceOrders: 'marketplace_orders', deliveryCodes: 'delivery_codes', locationRequests: 'location_requests', notifications: 'notifications' };
+  const JL_DB_NODES = { users: 'profiles', drivers: 'drivers', driverPublic: 'driver_public', enterprises: 'enterprises', registrations: 'registrations', userAffinity: 'user_affinity', deliveryRequests: 'delivery_requests', marketplaceOrders: 'marketplace_orders', deliveryCodes: 'delivery_codes', locationRequests: 'location_requests', notifications: 'notifications', supportTickets: 'support_tickets', tickets: 'ticket_registry', reports: 'reports', sponsoredReels: 'sponsored_reels', sponsorStats: 'sponsor_stats' };
   const JL_DB_POLL_MS = 4000;
   const JL_DB_STOP_ON_ERROR = false;   // admin : true (les écouteurs refusés sont relancés par la page)
   const jlDbTokens = new Map();      // dernier jeton de chaque compte (pour l'écriture de fin de session)
@@ -2648,6 +2648,10 @@
         return r;
       },
       async transaction(fn){
+        if(table === 'sponsor_stats' && sub.length === 2){   // compteur de vues/clics : +1 côté base (les spectateurs n'ont pas le droit de lire la ligne)
+          await jlDbReq(authApp, 'rpc/jl_sponsor_stat', { method: 'POST', body: { p_sid: id, p_day: sub[0], p_field: sub[1] } });
+          return { committed: true, snapshot: jlDbSnap(key, null) };
+        }
         for(let i = 0; i < 8; i++){
           const data = await load(); const cur = data === null ? null : jlDbGetAt(data, sub);
           const nv = fn(cur === null ? null : JSON.parse(JSON.stringify(cur)));
@@ -8391,6 +8395,7 @@
       window.supportTicketId = id;
       await firebase.database().ref('supportTickets/' + id).set({
         subject: text.slice(0, 48), status: 'open',
+        ownerUid: (window.currentAppUser && window.currentAppUser.uid) || '',
         clientName: (window.currentAppUser && window.currentAppUser.name) || '',
         clientPhone: (window.currentAppUser && window.currentAppUser.phone) || '',
         createdAt: firebase.database.ServerValue.TIMESTAMP,

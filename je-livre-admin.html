@@ -566,7 +566,7 @@
   // mais ces nœuds-là sont lus/écrits dans Supabase. Tous les autres nœuds restent sur Firebase pour l'instant.
   // JL_DB_SUPABASE = false : retour arrière d'urgence (tout redevient Firebase).
   const JL_DB_SUPABASE = true;
-  const JL_DB_NODES = { users: 'profiles', drivers: 'drivers', driverPublic: 'driver_public', enterprises: 'enterprises', registrations: 'registrations', userAffinity: 'user_affinity', deliveryRequests: 'delivery_requests', marketplaceOrders: 'marketplace_orders', deliveryCodes: 'delivery_codes', locationRequests: 'location_requests', notifications: 'notifications' };
+  const JL_DB_NODES = { users: 'profiles', drivers: 'drivers', driverPublic: 'driver_public', enterprises: 'enterprises', registrations: 'registrations', userAffinity: 'user_affinity', deliveryRequests: 'delivery_requests', marketplaceOrders: 'marketplace_orders', deliveryCodes: 'delivery_codes', locationRequests: 'location_requests', notifications: 'notifications', supportTickets: 'support_tickets', tickets: 'ticket_registry', reports: 'reports', sponsoredReels: 'sponsored_reels', sponsorStats: 'sponsor_stats' };
   const JL_DB_POLL_MS = 4000;
   const JL_DB_STOP_ON_ERROR = true;    // admin : true (les écouteurs refusés sont relancés par la page)
   const jlDbTokens = new Map();      // dernier jeton de chaque compte (pour l'écriture de fin de session)
