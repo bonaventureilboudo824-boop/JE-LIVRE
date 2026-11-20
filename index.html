@@ -2530,7 +2530,7 @@
   // mais ces nœuds-là sont lus/écrits dans Supabase. Tous les autres nœuds restent sur Firebase pour l'instant.
   // JL_DB_SUPABASE = false : retour arrière d'urgence (tout redevient Firebase).
   const JL_DB_SUPABASE = true;
-  const JL_DB_NODES = { users: 'profiles', drivers: 'drivers', driverPublic: 'driver_public', enterprises: 'enterprises', registrations: 'registrations', userAffinity: 'user_affinity' };
+  const JL_DB_NODES = { users: 'profiles', drivers: 'drivers', driverPublic: 'driver_public', enterprises: 'enterprises', registrations: 'registrations', userAffinity: 'user_affinity', deliveryRequests: 'delivery_requests', marketplaceOrders: 'marketplace_orders', deliveryCodes: 'delivery_codes', locationRequests: 'location_requests', notifications: 'notifications' };
   const JL_DB_POLL_MS = 4000;
   const JL_DB_STOP_ON_ERROR = false;   // admin : true (les écouteurs refusés sont relancés par la page)
   const jlDbTokens = new Map();      // dernier jeton de chaque compte (pour l'écriture de fin de session)
@@ -2595,6 +2595,7 @@
             keys.sort((a, b) => { const x = jlDbGetAt(obj[a], p), y = jlDbGetAt(obj[b], p); return x < y ? -1 : x > y ? 1 : 0; });
             if(filt.last) keys = keys.slice(-filt.last);
           }
+          if(filt && !filt.child && filt.last){ keys.sort(); keys = keys.slice(-filt.last); }
           const out = {}; keys.forEach((k) => { out[k] = obj[k]; });
           return jlDbSnap(key, keys.length ? out : null);
         }
@@ -2649,7 +2650,7 @@
       async transaction(fn){
         for(let i = 0; i < 8; i++){
           const data = await load(); const cur = data === null ? null : jlDbGetAt(data, sub);
-          const nv = fn(cur);
+          const nv = fn(cur === null ? null : JSON.parse(JSON.stringify(cur)));
           if(nv === undefined) return { committed: false, snapshot: jlDbSnap(key, cur) };
           const cv = jlDbClean(jlDbValue(nv));
           if(await write(sub, cv, 'set', cur, true) === true) return { committed: true, snapshot: jlDbSnap(key, cv) };
