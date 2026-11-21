@@ -2530,7 +2530,7 @@
   // mais ces nœuds-là sont lus/écrits dans Supabase. Tous les autres nœuds restent sur Firebase pour l'instant.
   // JL_DB_SUPABASE = false : retour arrière d'urgence (tout redevient Firebase).
   const JL_DB_SUPABASE = true;
-  const JL_DB_NODES = { users: 'profiles', drivers: 'drivers', driverPublic: 'driver_public', enterprises: 'enterprises', registrations: 'registrations', userAffinity: 'user_affinity', deliveryRequests: 'delivery_requests', marketplaceOrders: 'marketplace_orders', deliveryCodes: 'delivery_codes', locationRequests: 'location_requests', notifications: 'notifications', supportTickets: 'support_tickets', tickets: 'ticket_registry', reports: 'reports', sponsoredReels: 'sponsored_reels', sponsorStats: 'sponsor_stats' };
+  const JL_DB_NODES = { users: 'profiles', drivers: 'drivers', driverPublic: 'driver_public', enterprises: 'enterprises', registrations: 'registrations', userAffinity: 'user_affinity', deliveryRequests: 'delivery_requests', marketplaceOrders: 'marketplace_orders', deliveryCodes: 'delivery_codes', locationRequests: 'location_requests', notifications: 'notifications', supportTickets: 'support_tickets', tickets: 'ticket_registry', reports: 'reports', sponsoredReels: 'sponsored_reels', sponsorStats: 'sponsor_stats', payments: 'payments', withdrawalRequests: 'withdrawal_requests', commissionPayments: 'commission_payments', remittances: 'remittances', platformStats: 'platform_stats', referralCredits: 'referral_credits', referrals: 'referrals', driverWallets: 'driver_wallets', commissionLedger: 'commission_ledger', driverPayoutAccounts: 'driver_payout_accounts', paymentThrottle: 'payment_throttle', withdrawThrottle: 'withdraw_throttle', otps: 'otps', mockSmsLog: 'mock_sms_log' };
   const JL_DB_POLL_MS = 4000;
   const JL_DB_STOP_ON_ERROR = false;   // admin : true (les écouteurs refusés sont relancés par la page)
   const jlDbTokens = new Map();      // dernier jeton de chaque compte (pour l'écriture de fin de session)
@@ -2720,7 +2720,7 @@
       if(node === 'referralCodes' && segs.length === 2) return jlDbRefCode(authApp, segs[1]);
       const table = JL_DB_NODES[node];
       if(!table) return realDb.ref(path);
-      return jlDbRef(authApp, table, segs.slice(1), null, node);
+      return jlDbRef(authApp, table, node === 'platformStats' ? ['main'].concat(segs.slice(1)) : segs.slice(1), null, node);   // platformStats : une seule fiche « main »
     };
     return w;
   }
@@ -2920,9 +2920,7 @@
 
   function recordPlatformCommission(field, amount){
     if(!amount || typeof firebase === 'undefined') return;
-    firebase.database().ref('platformStats').update({
-      [field]: firebase.database.ServerValue.increment(Math.round(amount)),
-    }).catch(() => {});
+    jlCat.rpc(appAuth, 'jl_platform_stat_add', { p_field: field, p_amount: Math.round(amount) }).catch(() => {});
   }
 
   function setAuthError(msg){
