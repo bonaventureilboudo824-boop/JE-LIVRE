@@ -7860,9 +7860,16 @@
       if (!window.courierOwnPosition) { window.courierOwnPosition = { lat: OUAGA_CENTER[0], lng: OUAGA_CENTER[1] }; }
       flushDriverPositionCallbacks();
     }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 8000 });
+    // Signe de vie toutes les 60 s (même immobile) : sans lui, le serveur met le livreur « hors ligne » après 5 minutes de silence.
+    if (window.__driverHeartbeat) clearInterval(window.__driverHeartbeat);
+    window.__driverHeartbeat = setInterval(() => {
+      const ts = { updatedAt: firebase.database.ServerValue.TIMESTAMP };
+      driverRef.update(ts).catch(() => {}); jlDriverPublic(ts);
+    }, 60000);
   }
 
   function stopDriverPositionTracking(){
+    if (window.__driverHeartbeat) { clearInterval(window.__driverHeartbeat); window.__driverHeartbeat = null; }
     if (driverWatchId != null) { navigator.geolocation.clearWatch(driverWatchId); driverWatchId = null; }
     if (window.currentDriverUser) { driverDb.ref('drivers/' + window.currentDriverUser.uid).update({ online: false }); jlDriverPublic({ online: false }); }
   }
